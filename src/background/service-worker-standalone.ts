@@ -161,6 +161,19 @@
       return response.content[0]?.text || 'No response received';
     }
 
+    async continueConversation(userMessage: string, conversationHistory: any[]): Promise<string> {
+      const messages = [
+        ...conversationHistory,
+        {
+          role: 'user',
+          content: userMessage,
+        },
+      ];
+
+      const response = await this.sendRequest(messages);
+      return response.content[0]?.text || 'No response received';
+    }
+
     private async sendRequest(messages: any[]) {
       const requestBody = {
         model: 'claude-3-sonnet-20240229',
@@ -176,6 +189,7 @@
           'Content-Type': 'application/json',
           'x-api-key': this.apiKey,
           'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
         },
         body: JSON.stringify(requestBody),
       });
@@ -186,6 +200,20 @@
       }
 
       return await response.json();
+    }
+
+    async validateApiKey(): Promise<boolean> {
+      try {
+        const response = await this.sendRequest([
+          {
+            role: 'user',
+            content: 'Hello, respond with OK to test connection.',
+          },
+        ]);
+        return response && response.content && response.content.length > 0;
+      } catch {
+        return false;
+      }
     }
   }
 
@@ -234,13 +262,25 @@
       }
     }
 
-    private async handleMessage(request: any, sender: chrome.runtime.MessageSender): Promise<any> {
+    private async handleMessage(request: any, _sender: chrome.runtime.MessageSender): Promise<any> {
       switch (request.type) {
         case 'EXECUTE_TASK':
           return await this.executeTask(request.data);
 
+        case 'CONTINUE_CONVERSATION':
+          return await this.continueConversation(request.data);
+
         case 'UPDATE_API_KEY':
           return await this.updateApiKey(request.data.apiKey);
+
+        case 'GET_API_KEY':
+          return await this.storage.getApiKey();
+
+        case 'CLEAR_API_KEY':
+          return await this.clearApiKey();
+
+        case 'TEST_API_KEY':
+          return await this.testApiKey(request.data.apiKey);
 
         case 'GET_CONVERSATIONS':
           return await this.storage.getConversations();
@@ -305,10 +345,23 @@
 
         await this.storage.saveConversation(conversation);
 
+        // Build conversation history for Anthropic API format
+        const conversationHistory = [
+          {
+            role: 'user',
+            content: `${task.prompt}\n\nContent to process:\n${request.content}`,
+          },
+          {
+            role: 'assistant',
+            content: result,
+          },
+        ];
+
         return {
           success: true,
           result,
           conversationId: conversation.id,
+          conversationHistory,
         };
       } catch (error: any) {
         console.error('Task execution failed:', error);
@@ -316,6 +369,70 @@
           success: false,
           error: error.message || 'Unknown error occurred',
           conversationId: generateId(),
+        };
+      }
+    }
+
+    private async continueConversation(request: any) {
+      try {
+        if (!this.anthropicAPI) {
+          throw new Error('API key not configured. Please set your Anthropic API key in settings.');
+        }
+
+        const { message, conversationHistory = [] } = request;
+
+        // Continue the conversation with Anthropic API
+        const result = await this.anthropicAPI.continueConversation(message, conversationHistory);
+
+        // Update conversation history
+        const updatedHistory = [
+          ...conversationHistory,
+          {
+            role: 'user',
+            content: message,
+          },
+          {
+            role: 'assistant',
+            content: result,
+          },
+        ];
+
+        // Update stored conversation if we have an ID
+        if (request.conversationId) {
+          const conversations = await this.storage.getConversations();
+          const conversation = conversations.find((c: any) => c.id === request.conversationId);
+
+          if (conversation) {
+            // Add new messages to the conversation
+            conversation.messages.push(
+              {
+                id: generateId(),
+                type: 'user',
+                content: message,
+                timestamp: Date.now(),
+              },
+              {
+                id: generateId(),
+                type: 'assistant',
+                content: result,
+                timestamp: Date.now(),
+              }
+            );
+            conversation.updatedAt = Date.now();
+            await this.storage.saveConversation(conversation);
+          }
+        }
+
+        return {
+          success: true,
+          result,
+          conversationHistory: updatedHistory,
+        };
+      } catch (error: any) {
+        console.error('Conversation continuation failed:', error);
+        return {
+          success: false,
+          error: error.message || 'Failed to continue conversation',
         };
       }
     }
@@ -328,6 +445,32 @@
       } catch (error) {
         console.error('Failed to update API key:', error);
         throw error;
+      }
+    }
+
+    private async clearApiKey() {
+      try {
+        await chrome.storage.sync.remove(BUDDY_CONFIG.STORAGE_KEYS.API_KEY);
+        this.anthropicAPI = null;
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to clear API key:', error);
+        return { success: false, error: 'Failed to clear API key' };
+      }
+    }
+
+    private async testApiKey(apiKey: string) {
+      try {
+        const testAPI = new AnthropicAPI(apiKey);
+        const isValid = await testAPI.validateApiKey();
+        if (isValid) {
+          return { success: true };
+        } else {
+          return { success: false, error: 'Invalid API key or connection failed' };
+        }
+      } catch (error: any) {
+        console.error('API key test failed:', error);
+        return { success: false, error: error.message || 'API key test failed' };
       }
     }
 

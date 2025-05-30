@@ -85,6 +85,24 @@
       const result = await chrome.storage.sync.get(BUDDY_CONFIG.STORAGE_KEYS.BLACKLIST);
       return result[BUDDY_CONFIG.STORAGE_KEYS.BLACKLIST] || [];
     }
+
+    async addToBlacklist(domain: string): Promise<void> {
+      const blacklist = await this.getBlacklist();
+      if (!blacklist.includes(domain)) {
+        blacklist.push(domain);
+        await chrome.storage.sync.set({
+          [BUDDY_CONFIG.STORAGE_KEYS.BLACKLIST]: blacklist,
+        });
+      }
+    }
+
+    async removeFromBlacklist(domain: string): Promise<void> {
+      const blacklist = await this.getBlacklist();
+      const updatedBlacklist = blacklist.filter(d => d !== domain);
+      await chrome.storage.sync.set({
+        [BUDDY_CONFIG.STORAGE_KEYS.BLACKLIST]: updatedBlacklist,
+      });
+    }
   }
 
   // Buddy Icon Class
@@ -329,6 +347,10 @@
     private sidebar: HTMLElement | null = null;
     private isOpen = false;
     private icon: BuddyIcon | null = null;
+    private storage = StorageManager.getInstance();
+    private currentWidth = BUDDY_CONFIG.SIDEBAR_DEFAULT_WIDTH;
+    private currentConversationId: string | null = null;
+    private conversationHistory: any[] = [];
 
     init(icon: BuddyIcon) {
       this.icon = icon;
@@ -381,7 +403,10 @@
         <!-- Header -->
         <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #f3f4f6;">
           <h2 style="margin: 0; font-size: 20px; color: #111827; font-weight: 600;">Buddy</h2>
-          <button id="close-sidebar" style="background: none; border: none; font-size: 16px; cursor: pointer; color: #6b7280; padding: 4px; border-radius: 4px; transition: background 0.2s;">✕</button>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button id="settings-button" style="background: none; border: none; font-size: 16px; cursor: pointer; color: #6b7280; padding: 4px; border-radius: 4px; transition: background 0.2s;" title="Settings">⚙️</button>
+            <button id="close-sidebar" style="background: none; border: none; font-size: 16px; cursor: pointer; color: #6b7280; padding: 4px; border-radius: 4px; transition: background 0.2s;">✕</button>
+          </div>
         </div>
 
         <!-- Tasks Section -->
@@ -404,8 +429,11 @@
 
           <!-- Input Area -->
           <div style="border-top: 1px solid #f3f4f6; padding: 16px 20px;">
+            <div id="conversation-status" style="display: none; padding: 6px 12px; background: #dcfce7; border: 1px solid #bbf7d0; border-radius: 6px; margin-bottom: 12px; font-size: 12px; color: #166534;">
+              💬 Conversation active - I can now answer follow-up questions about your task
+            </div>
             <div style="display: flex; gap: 8px; align-items: flex-end;">
-              <textarea id="chat-input" placeholder="Ask me anything about this page..." style="flex: 1; min-height: 40px; max-height: 120px; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; font-family: inherit; resize: none; outline: none;" rows="1"></textarea>
+              <textarea id="chat-input" placeholder="Ask me anything about this page..." style="flex: 1; min-height: 40px; max-height: 120px; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; font-family: inherit; resize: none; outline: none; color: #374151; background: white;" rows="1"></textarea>
               <button id="send-message" style="padding: 10px 16px; background: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; transition: background 0.2s;">Send</button>
             </div>
           </div>
@@ -426,6 +454,11 @@
       // Close button
       this.sidebar.querySelector('#close-sidebar')?.addEventListener('click', () => {
         this.close();
+      });
+
+      // Settings button
+      this.sidebar.querySelector('#settings-button')?.addEventListener('click', () => {
+        this.openSettings();
       });
 
       // Task buttons
@@ -474,16 +507,20 @@
         });
       });
 
-      // Close button hover effect
+      // Header button hover effects
+      const settingsButton = this.sidebar.querySelector('#settings-button') as HTMLElement;
       const closeButton = this.sidebar.querySelector('#close-sidebar') as HTMLElement;
-      if (closeButton) {
-        closeButton.addEventListener('mouseenter', () => {
-          closeButton.style.background = '#f3f4f6';
-        });
-        closeButton.addEventListener('mouseleave', () => {
-          closeButton.style.background = 'none';
-        });
-      }
+
+      [settingsButton, closeButton].forEach(button => {
+        if (button) {
+          button.addEventListener('mouseenter', () => {
+            button.style.background = '#f3f4f6';
+          });
+          button.addEventListener('mouseleave', () => {
+            button.style.background = 'none';
+          });
+        }
+      });
     }
 
     private autoResizeTextarea() {
@@ -525,7 +562,12 @@
         executing?.remove();
 
         if (response.success) {
+          // Store conversation context
+          this.currentConversationId = response.conversationId;
+          this.conversationHistory = response.conversationHistory || [];
+
           this.addTaskResult(taskId, content, response.result);
+          this.showConversationStatus();
         } else {
           this.showError(response.error || 'Task execution failed');
         }
@@ -547,15 +589,27 @@
       this.showTyping();
 
       try {
-        // For now, just show a placeholder response
-        // TODO: Implement proper conversation continuation
-        setTimeout(() => {
-          this.removeTyping();
-          this.addAssistantMessage(
-            "I'm still learning how to continue conversations! For now, please use the quick tasks above. Full conversation support is coming soon! 🚀"
-          );
-        }, 1000);
+        // Send message to background script for processing
+        const response = await chrome.runtime.sendMessage({
+          type: 'CONTINUE_CONVERSATION',
+          data: {
+            message,
+            conversationId: this.currentConversationId,
+            conversationHistory: this.conversationHistory,
+          },
+        });
+
+        this.removeTyping();
+
+        if (response.success) {
+          // Update conversation context
+          this.conversationHistory = response.conversationHistory;
+          this.addAssistantMessage(response.result);
+        } else {
+          this.showError(response.error || 'Failed to process message');
+        }
       } catch (error) {
+        console.error('Conversation error:', error);
         this.removeTyping();
         this.showError('Failed to send message. Please try again.');
       }
@@ -768,6 +822,388 @@
       return div.innerHTML;
     }
 
+    private showConversationStatus() {
+      const statusDiv = this.sidebar?.querySelector('#conversation-status');
+      if (statusDiv) {
+        statusDiv.style.display = 'block';
+      }
+    }
+
+    private async openSettings() {
+      // Check if modal already exists
+      if (document.getElementById('buddy-settings-modal')) return;
+
+      // Get current settings
+      const settings = await this.storage.getSettings();
+      const apiKey = await chrome.runtime.sendMessage({ type: 'GET_API_KEY' });
+      const blacklist = await this.storage.getBlacklist();
+
+      // Create modal overlay
+      const modal = document.createElement('div');
+      modal.id = 'buddy-settings-modal';
+      modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 2147483647;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      `;
+
+      modal.innerHTML = `
+        <div style="background: white; border-radius: 12px; width: 500px; max-width: 90vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);">
+          <!-- Header -->
+          <div style="padding: 24px 24px 0 24px; border-bottom: 1px solid #f3f4f6;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+              <h2 style="margin: 0; font-size: 24px; font-weight: 600; color: #111827;">Settings</h2>
+              <button id="close-settings" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #6b7280; padding: 4px;">✕</button>
+            </div>
+          </div>
+
+          <!-- Content -->
+          <div style="padding: 24px;">
+            
+            <!-- API Key Section -->
+            <div style="margin-bottom: 32px;">
+              <h3 style="margin: 0 0 12px 0; font-size: 18px; font-weight: 600; color: #111827;">🔑 API Configuration</h3>
+              <p style="margin: 0 0 16px 0; color: #6b7280; font-size: 14px;">
+                Enter your Anthropic API key to enable AI functionality. Your key is stored securely in your browser.
+              </p>
+              
+              <div style="margin-bottom: 12px;">
+                <label style="display: block; margin-bottom: 6px; font-weight: 500; color: #374151; font-size: 14px;">API Key</label>
+                <div style="display: flex; gap: 8px;">
+                  <input type="password" id="api-key-input" placeholder="sk-ant-..." value="${apiKey || ''}" style="flex: 1; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; color: #374151;">
+                  <button id="toggle-api-visibility" style="padding: 8px 12px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 6px; cursor: pointer; font-size: 14px;">👁️</button>
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                <button id="save-api-key" style="padding: 8px 16px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500;">Save Key</button>
+                <button id="test-api-key" style="padding: 8px 16px; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500;">Test Connection</button>
+                <button id="clear-api-key" style="padding: 8px 16px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500;">Clear</button>
+              </div>
+
+              <div id="api-status" style="padding: 8px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 12px; ${apiKey ? 'background: #dcfce7; color: #166534; border: 1px solid #bbf7d0;' : 'background: #fef2f2; color: #dc2626; border: 1px solid #fecaca;'}">
+                ${apiKey ? '✅ API key configured' : '⚠️ No API key configured - AI features disabled'}
+              </div>
+
+              <div style="background: #fffbeb; border: 1px solid #fed7aa; border-radius: 6px; padding: 12px; font-size: 13px; color: #92400e;">
+                💡 <strong>Get your API key:</strong> Visit <a href="https://console.anthropic.com/" target="_blank" style="color: #c2410c; text-decoration: underline;">console.anthropic.com</a> to create an account and get your API key.
+              </div>
+            </div>
+
+            <!-- Site Management Section -->
+            <div style="margin-bottom: 32px;">
+              <h3 style="margin: 0 0 12px 0; font-size: 18px; font-weight: 600; color: #111827;">🚫 Site Blacklist</h3>
+              <p style="margin: 0 0 16px 0; color: #6b7280; font-size: 14px;">
+                Disable Buddy on specific websites. Enter domain names (e.g., example.com).
+              </p>
+              
+              <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                <input type="text" id="blacklist-input" placeholder="example.com" style="flex: 1; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; color: #374151;">
+                <button id="add-to-blacklist" style="padding: 8px 16px; background: #6b7280; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500;">Add</button>
+              </div>
+
+              <div id="blacklist-items" style="max-height: 150px; overflow-y: auto;">
+                ${blacklist
+                  .map(
+                    domain => `
+                  <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 4px;">
+                    <span style="font-size: 14px; color: #374151;">${domain}</span>
+                    <button onclick="window.Buddy.removeFromBlacklist('${domain}')" style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 12px;">Remove</button>
+                  </div>
+                `
+                  )
+                  .join('')}
+              </div>
+            </div>
+
+            <!-- Settings Section -->
+            <div>
+              <h3 style="margin: 0 0 12px 0; font-size: 18px; font-weight: 600; color: #111827;">⚙️ Preferences</h3>
+              
+              <div style="margin-bottom: 16px;">
+                <label style="display: block; margin-bottom: 6px; font-weight: 500; color: #374151; font-size: 14px;">Sidebar Width</label>
+                <input type="range" id="sidebar-width" min="300" max="800" value="${settings.sidebarWidth}" style="width: 100%; margin-bottom: 4px;">
+                <div style="display: flex; justify-content: space-between; font-size: 12px; color: #6b7280;">
+                  <span>300px</span>
+                  <span id="width-value">${settings.sidebarWidth}px</span>
+                  <span>800px</span>
+                </div>
+              </div>
+
+              <div style="margin-bottom: 16px;">
+                <label style="display: block; margin-bottom: 6px; font-weight: 500; color: #374151; font-size: 14px;">Conversation History Limit</label>
+                <select id="conversation-limit" style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; color: #374151;">
+                  <option value="25" ${settings.conversationRetention === 25 ? 'selected' : ''}>25 conversations</option>
+                  <option value="50" ${settings.conversationRetention === 50 ? 'selected' : ''}>50 conversations</option>
+                  <option value="100" ${settings.conversationRetention === 100 ? 'selected' : ''}>100 conversations</option>
+                  <option value="200" ${settings.conversationRetention === 200 ? 'selected' : ''}>200 conversations</option>
+                </select>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Footer -->
+          <div style="padding: 16px 24px; border-top: 1px solid #f3f4f6; background: #f9fafb; border-radius: 0 0 12px 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div style="font-size: 12px; color: #6b7280;">
+                Buddy v1.0.0 • Your data stays private in your browser
+              </div>
+              <button id="save-settings" style="padding: 8px 16px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500;">Save All Settings</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(modal);
+      this.setupSettingsEventListeners(modal);
+    }
+
+    private setupSettingsEventListeners(modal: HTMLElement) {
+      // Close modal
+      modal.querySelector('#close-settings')?.addEventListener('click', () => {
+        modal.remove();
+      });
+
+      // Click outside to close
+      modal.addEventListener('click', e => {
+        if (e.target === modal) {
+          modal.remove();
+        }
+      });
+
+      // API key visibility toggle
+      const apiInput = modal.querySelector('#api-key-input') as HTMLInputElement;
+      modal.querySelector('#toggle-api-visibility')?.addEventListener('click', () => {
+        apiInput.type = apiInput.type === 'password' ? 'text' : 'password';
+      });
+
+      // Save API key
+      modal.querySelector('#save-api-key')?.addEventListener('click', async () => {
+        const apiKey = apiInput.value.trim();
+        if (!apiKey) {
+          this.showSettingsMessage(modal, 'Please enter an API key', 'error');
+          return;
+        }
+
+        try {
+          const response = await chrome.runtime.sendMessage({
+            type: 'UPDATE_API_KEY',
+            data: { apiKey },
+          });
+
+          if (response.success) {
+            this.showSettingsMessage(modal, 'API key saved successfully!', 'success');
+            this.updateApiStatus(modal, true);
+          } else {
+            this.showSettingsMessage(modal, 'Failed to save API key', 'error');
+          }
+        } catch (error) {
+          this.showSettingsMessage(modal, 'Error saving API key', 'error');
+        }
+      });
+
+      // Test API key
+      modal.querySelector('#test-api-key')?.addEventListener('click', async () => {
+        const apiKey = apiInput.value.trim();
+        if (!apiKey) {
+          this.showSettingsMessage(modal, 'Please enter an API key first', 'error');
+          return;
+        }
+
+        this.showSettingsMessage(modal, 'Testing connection...', 'info');
+
+        try {
+          // Simple test by trying to execute a minimal task
+          const response = await chrome.runtime.sendMessage({
+            type: 'TEST_API_KEY',
+            data: { apiKey },
+          });
+
+          if (response.success) {
+            this.showSettingsMessage(modal, 'Connection successful! ✅', 'success');
+          } else {
+            this.showSettingsMessage(
+              modal,
+              'Connection failed: ' + (response.error || 'Invalid API key'),
+              'error'
+            );
+          }
+        } catch (error) {
+          this.showSettingsMessage(modal, 'Connection test failed', 'error');
+        }
+      });
+
+      // Clear API key
+      modal.querySelector('#clear-api-key')?.addEventListener('click', async () => {
+        if (
+          confirm('Are you sure you want to clear your API key? This will disable AI features.')
+        ) {
+          try {
+            await chrome.runtime.sendMessage({ type: 'CLEAR_API_KEY' });
+            apiInput.value = '';
+            this.showSettingsMessage(modal, 'API key cleared', 'success');
+            this.updateApiStatus(modal, false);
+          } catch (error) {
+            this.showSettingsMessage(modal, 'Error clearing API key', 'error');
+          }
+        }
+      });
+
+      // Add to blacklist
+      modal.querySelector('#add-to-blacklist')?.addEventListener('click', async () => {
+        const input = modal.querySelector('#blacklist-input') as HTMLInputElement;
+        const domain = input.value.trim().toLowerCase();
+
+        if (!domain) return;
+
+        // Simple domain validation
+        if (!/^[a-z0-9\-.]+\.[a-z]{2,}$/i.test(domain)) {
+          this.showSettingsMessage(
+            modal,
+            'Please enter a valid domain (e.g., example.com)',
+            'error'
+          );
+          return;
+        }
+
+        try {
+          await this.storage.addToBlacklist(domain);
+          input.value = '';
+          this.showSettingsMessage(modal, `Added ${domain} to blacklist`, 'success');
+          this.refreshBlacklist(modal);
+        } catch (error) {
+          this.showSettingsMessage(modal, 'Error adding to blacklist', 'error');
+        }
+      });
+
+      // Sidebar width slider
+      const widthSlider = modal.querySelector('#sidebar-width') as HTMLInputElement;
+      const widthValue = modal.querySelector('#width-value') as HTMLElement;
+
+      widthSlider.addEventListener('input', () => {
+        widthValue.textContent = `${widthSlider.value}px`;
+      });
+
+      // Save all settings
+      modal.querySelector('#save-settings')?.addEventListener('click', async () => {
+        try {
+          const newSettings = {
+            sidebarWidth: parseInt(widthSlider.value),
+            conversationRetention: parseInt(
+              (modal.querySelector('#conversation-limit') as HTMLSelectElement).value
+            ),
+          };
+
+          await this.storage.saveSettings(newSettings);
+          this.showSettingsMessage(modal, 'Settings saved successfully!', 'success');
+
+          // Update current sidebar width if it's open
+          this.currentWidth = newSettings.sidebarWidth;
+          if (this.sidebar) {
+            this.sidebar.style.width = `${this.currentWidth}px`;
+            this.updateBodyMargin();
+          }
+        } catch (error) {
+          this.showSettingsMessage(modal, 'Error saving settings', 'error');
+        }
+      });
+
+      // Enter key handlers
+      apiInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          modal.querySelector('#save-api-key')?.dispatchEvent(new Event('click'));
+        }
+      });
+
+      const blacklistInput = modal.querySelector('#blacklist-input') as HTMLInputElement;
+      blacklistInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          modal.querySelector('#add-to-blacklist')?.dispatchEvent(new Event('click'));
+        }
+      });
+    }
+
+    private showSettingsMessage(
+      modal: HTMLElement,
+      message: string,
+      type: 'success' | 'error' | 'info'
+    ) {
+      // Remove existing message
+      const existing = modal.querySelector('#settings-message');
+      existing?.remove();
+
+      const colors = {
+        success: 'background: #dcfce7; color: #166534; border: 1px solid #bbf7d0;',
+        error: 'background: #fef2f2; color: #dc2626; border: 1px solid #fecaca;',
+        info: 'background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe;',
+      };
+
+      const messageDiv = document.createElement('div');
+      messageDiv.id = 'settings-message';
+      messageDiv.style.cssText = `
+        ${colors[type]}
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 13px;
+        margin: 12px 24px;
+        position: relative;
+      `;
+      messageDiv.textContent = message;
+
+      // Insert after the header
+      const header = modal.querySelector('div');
+      header?.insertAdjacentElement('afterend', messageDiv);
+
+      // Auto-remove after 3 seconds
+      setTimeout(() => messageDiv.remove(), 3000);
+    }
+
+    private updateApiStatus(modal: HTMLElement, hasKey: boolean) {
+      const statusDiv = modal.querySelector('#api-status') as HTMLElement;
+      if (statusDiv) {
+        if (hasKey) {
+          statusDiv.style.cssText =
+            'padding: 8px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 12px; background: #dcfce7; color: #166534; border: 1px solid #bbf7d0;';
+          statusDiv.textContent = '✅ API key configured';
+        } else {
+          statusDiv.style.cssText =
+            'padding: 8px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 12px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca;';
+          statusDiv.textContent = '⚠️ No API key configured - AI features disabled';
+        }
+      }
+    }
+
+    private async refreshBlacklist(modal: HTMLElement) {
+      const blacklist = await this.storage.getBlacklist();
+      const container = modal.querySelector('#blacklist-items') as HTMLElement;
+
+      container.innerHTML = blacklist
+        .map(
+          domain => `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 4px;">
+          <span style="font-size: 14px; color: #374151;">${domain}</span>
+          <button onclick="window.Buddy.removeFromBlacklist('${domain}')" style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 12px;">Remove</button>
+        </div>
+      `
+        )
+        .join('');
+    }
+
+    private updateBodyMargin() {
+      if (this.isOpen) {
+        document.body.style.marginRight = `${this.currentWidth}px`;
+      }
+    }
+
     private close() {
       if (!this.isOpen || !this.sidebar) {
         return;
@@ -820,6 +1256,32 @@
           // No selection, just copy to clipboard
           navigator.clipboard.writeText(newText);
           alert('Text copied to clipboard. Please select text first to replace it automatically.');
+        }
+      },
+      removeFromBlacklist: async (domain: string) => {
+        try {
+          const storage = StorageManager.getInstance();
+          await storage.removeFromBlacklist(domain);
+
+          // Refresh the blacklist display if settings modal is open
+          const modal = document.getElementById('buddy-settings-modal');
+          if (modal && sidebar.refreshBlacklist) {
+            const blacklist = await storage.getBlacklist();
+            const container = modal.querySelector('#blacklist-items') as HTMLElement;
+
+            container.innerHTML = blacklist
+              .map(
+                (d: string) => `
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 4px;">
+                <span style="font-size: 14px; color: #374151;">${d}</span>
+                <button onclick="window.Buddy.removeFromBlacklist('${d}')" style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 12px;">Remove</button>
+              </div>
+            `
+              )
+              .join('');
+          }
+        } catch (error) {
+          console.error('Error removing from blacklist:', error);
         }
       },
     };
