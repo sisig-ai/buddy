@@ -357,7 +357,7 @@
       // Hide the icon when sidebar is open
       this.icon?.hide();
 
-      // Create a simple sidebar for now
+      // Create the functional sidebar
       this.sidebar = document.createElement('div');
       this.sidebar.id = 'buddy-sidebar';
       this.sidebar.style.cssText = `
@@ -372,25 +372,43 @@
         z-index: 2147483646;
         transform: translateX(0);
         transition: transform 0.3s ease;
-        padding: 20px;
+        display: flex;
+        flex-direction: column;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
       `;
 
       this.sidebar.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-          <h2 style="margin: 0; font-size: 24px; color: #111827;">Buddy</h2>
-          <button id="close-sidebar" style="background: none; border: none; font-size: 18px; cursor: pointer; color: #6b7280; padding: 4px;">✕</button>
+        <!-- Header -->
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #f3f4f6;">
+          <h2 style="margin: 0; font-size: 20px; color: #111827; font-weight: 600;">Buddy</h2>
+          <button id="close-sidebar" style="background: none; border: none; font-size: 16px; cursor: pointer; color: #6b7280; padding: 4px; border-radius: 4px; transition: background 0.2s;">✕</button>
         </div>
-        <p style="color: #6b7280; margin-bottom: 20px;">AI assistant for web content</p>
-        <div style="background: #f3f4f6; padding: 16px; border-radius: 8px; margin-bottom: 20px;">
-          <h3 style="margin: 0 0 10px 0; font-size: 16px; color: #374151;">Quick Tasks</h3>
-          <button id="summarize-page" style="display: block; width: 100%; padding: 8px 12px; margin-bottom: 8px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer;">Summarize this page</button>
-          <button id="rephrase-text" style="display: block; width: 100%; padding: 8px 12px; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer;">Rephrase selected text</button>
+
+        <!-- Tasks Section -->
+        <div style="padding: 16px 20px; border-bottom: 1px solid #f3f4f6;">
+          <h3 style="margin: 0 0 12px 0; font-size: 14px; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.5px;">Quick Tasks</h3>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <button id="summarize-page" class="task-button" style="width: 100%; padding: 10px 12px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; transition: background 0.2s;">📄 Summarize this page</button>
+            <button id="rephrase-text" class="task-button" style="width: 100%; padding: 10px 12px; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; transition: background 0.2s;">✏️ Rephrase selected text</button>
+          </div>
         </div>
-        <div style="background: #f9fafb; padding: 16px; border-radius: 8px;">
-          <p style="margin: 0; font-size: 14px; color: #6b7280;">
-            This is a basic UI. The full chat interface and task system are coming next!
-          </p>
+
+        <!-- Chat Container -->
+        <div style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
+          <!-- Messages Area -->
+          <div id="messages-container" style="flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px;">
+            <div style="text-align: center; color: #6b7280; font-size: 14px; padding: 20px 0;">
+              👋 Hi! I'm Buddy, your AI assistant. Try one of the quick tasks above or start a conversation.
+            </div>
+          </div>
+
+          <!-- Input Area -->
+          <div style="border-top: 1px solid #f3f4f6; padding: 16px 20px;">
+            <div style="display: flex; gap: 8px; align-items: flex-end;">
+              <textarea id="chat-input" placeholder="Ask me anything about this page..." style="flex: 1; min-height: 40px; max-height: 120px; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; font-family: inherit; resize: none; outline: none;" rows="1"></textarea>
+              <button id="send-message" style="padding: 10px 16px; background: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; transition: background 0.2s;">Send</button>
+            </div>
+          </div>
         </div>
       `;
 
@@ -398,18 +416,356 @@
       document.body.style.marginRight = '400px';
       this.isOpen = true;
 
-      // Add click handlers for buttons
+      this.setupSidebarEventListeners();
+      this.autoResizeTextarea();
+    }
+
+    private setupSidebarEventListeners() {
+      if (!this.sidebar) return;
+
+      // Close button
       this.sidebar.querySelector('#close-sidebar')?.addEventListener('click', () => {
         this.close();
       });
 
+      // Task buttons
       this.sidebar.querySelector('#summarize-page')?.addEventListener('click', () => {
-        alert('Summarize page task would execute here!');
+        this.executeTask('summarize-page');
       });
 
       this.sidebar.querySelector('#rephrase-text')?.addEventListener('click', () => {
-        alert('Rephrase text task would execute here!');
+        this.executeTask('rephrase-text');
       });
+
+      // Chat input
+      const chatInput = this.sidebar.querySelector('#chat-input') as HTMLTextAreaElement;
+      const sendButton = this.sidebar.querySelector('#send-message') as HTMLButtonElement;
+
+      if (chatInput && sendButton) {
+        // Send message on button click
+        sendButton.addEventListener('click', () => {
+          this.sendMessage();
+        });
+
+        // Send message on Enter (but allow Shift+Enter for new lines)
+        chatInput.addEventListener('keydown', e => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            this.sendMessage();
+          }
+        });
+
+        // Auto-resize textarea
+        chatInput.addEventListener('input', () => {
+          this.autoResizeTextarea();
+        });
+      }
+
+      // Hover effects for task buttons
+      const taskButtons = this.sidebar.querySelectorAll('.task-button');
+      taskButtons.forEach(button => {
+        button.addEventListener('mouseenter', () => {
+          (button as HTMLElement).style.transform = 'translateY(-1px)';
+          (button as HTMLElement).style.boxShadow = '0 4px 8px rgba(0,0,0,0.1)';
+        });
+        button.addEventListener('mouseleave', () => {
+          (button as HTMLElement).style.transform = 'translateY(0)';
+          (button as HTMLElement).style.boxShadow = 'none';
+        });
+      });
+
+      // Close button hover effect
+      const closeButton = this.sidebar.querySelector('#close-sidebar') as HTMLElement;
+      if (closeButton) {
+        closeButton.addEventListener('mouseenter', () => {
+          closeButton.style.background = '#f3f4f6';
+        });
+        closeButton.addEventListener('mouseleave', () => {
+          closeButton.style.background = 'none';
+        });
+      }
+    }
+
+    private autoResizeTextarea() {
+      const textarea = this.sidebar?.querySelector('#chat-input') as HTMLTextAreaElement;
+      if (!textarea) return;
+
+      textarea.style.height = 'auto';
+      const newHeight = Math.min(textarea.scrollHeight, 120);
+      textarea.style.height = `${newHeight}px`;
+    }
+
+    private async executeTask(taskId: string) {
+      try {
+        this.showTaskExecuting(taskId);
+
+        let content = '';
+        if (taskId === 'summarize-page') {
+          content = this.extractPageContent();
+          if (!content.trim()) {
+            this.showError('No content found on this page to summarize.');
+            return;
+          }
+        } else if (taskId === 'rephrase-text') {
+          content = this.getSelectedText();
+          if (!content.trim()) {
+            this.showError('Please select some text first to rephrase.');
+            return;
+          }
+        }
+
+        // Send task to background script
+        const response = await chrome.runtime.sendMessage({
+          type: 'EXECUTE_TASK',
+          data: { taskId, content },
+        });
+
+        // Remove the executing indicator
+        const executing = this.sidebar?.querySelector('#executing-task');
+        executing?.remove();
+
+        if (response.success) {
+          this.addTaskResult(taskId, content, response.result);
+        } else {
+          this.showError(response.error || 'Task execution failed');
+        }
+      } catch (error) {
+        console.error('Task execution error:', error);
+        this.showError('Failed to execute task. Please try again.');
+      }
+    }
+
+    private async sendMessage() {
+      const input = this.sidebar?.querySelector('#chat-input') as HTMLTextAreaElement;
+      if (!input || !input.value.trim()) return;
+
+      const message = input.value.trim();
+      input.value = '';
+      this.autoResizeTextarea();
+
+      this.addUserMessage(message);
+      this.showTyping();
+
+      try {
+        // For now, just show a placeholder response
+        // TODO: Implement proper conversation continuation
+        setTimeout(() => {
+          this.removeTyping();
+          this.addAssistantMessage(
+            "I'm still learning how to continue conversations! For now, please use the quick tasks above. Full conversation support is coming soon! 🚀"
+          );
+        }, 1000);
+      } catch (error) {
+        this.removeTyping();
+        this.showError('Failed to send message. Please try again.');
+      }
+    }
+
+    private extractPageContent(): string {
+      // Simple content extraction - we'll enhance this later
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+        acceptNode: node => {
+          const parent = node.parentElement;
+          if (!parent) return NodeFilter.FILTER_REJECT;
+
+          const style = window.getComputedStyle(parent);
+          if (style.display === 'none' || style.visibility === 'hidden') {
+            return NodeFilter.FILTER_REJECT;
+          }
+
+          const tagName = parent.tagName.toLowerCase();
+          if (['script', 'style', 'nav', 'header', 'footer'].includes(tagName)) {
+            return NodeFilter.FILTER_REJECT;
+          }
+
+          return NodeFilter.FILTER_ACCEPT;
+        },
+      });
+
+      const textParts: string[] = [];
+      let node;
+      while ((node = walker.nextNode())) {
+        const text = node.textContent?.trim();
+        if (text && text.length > 3) {
+          textParts.push(text);
+        }
+      }
+
+      return textParts.join(' ').slice(0, 8000); // Limit content size
+    }
+
+    private getSelectedText(): string {
+      return window.getSelection()?.toString() || '';
+    }
+
+    private addUserMessage(content: string) {
+      const container = this.sidebar?.querySelector('#messages-container');
+      if (!container) return;
+
+      const messageDiv = document.createElement('div');
+      messageDiv.style.cssText = `
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 8px;
+      `;
+
+      messageDiv.innerHTML = `
+        <div style="background: #3b82f6; color: white; padding: 8px 12px; border-radius: 12px 12px 4px 12px; max-width: 80%; font-size: 14px; line-height: 1.4;">
+          ${this.escapeHtml(content)}
+        </div>
+      `;
+
+      container.appendChild(messageDiv);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    private addAssistantMessage(content: string) {
+      const container = this.sidebar?.querySelector('#messages-container');
+      if (!container) return;
+
+      const messageDiv = document.createElement('div');
+      messageDiv.style.cssText = `
+        display: flex;
+        justify-content: flex-start;
+        margin-bottom: 8px;
+      `;
+
+      messageDiv.innerHTML = `
+        <div style="background: #f3f4f6; color: #374151; padding: 8px 12px; border-radius: 12px 12px 12px 4px; max-width: 80%; font-size: 14px; line-height: 1.4;">
+          ${this.formatMarkdown(content)}
+        </div>
+      `;
+
+      container.appendChild(messageDiv);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    private addTaskResult(taskId: string, originalContent: string, result: string) {
+      const container = this.sidebar?.querySelector('#messages-container');
+      if (!container) return;
+
+      const taskName = taskId === 'summarize-page' ? 'Page Summary' : 'Rephrased Text';
+
+      const messageDiv = document.createElement('div');
+      messageDiv.style.cssText = `
+        margin-bottom: 12px;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        overflow: hidden;
+      `;
+
+      messageDiv.innerHTML = `
+        <div style="background: #f8fafc; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; font-size: 12px; font-weight: 600; color: #6b7280;">
+          ${taskName} ✨
+        </div>
+        <div style="padding: 12px;">
+          <div style="font-size: 14px; line-height: 1.5; color: #374151;">
+            ${this.formatMarkdown(result)}
+          </div>
+          <div style="margin-top: 12px; display: flex; gap: 8px;">
+            <button onclick="navigator.clipboard.writeText(${JSON.stringify(result).replace(/"/g, '&quot;')})" style="padding: 4px 8px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; cursor: pointer;">📋 Copy</button>
+            ${taskId === 'rephrase-text' ? `<button onclick="window.Buddy?.replaceSelectedText(${JSON.stringify(result).replace(/"/g, '&quot;')})" style="padding: 4px 8px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; cursor: pointer;">✏️ Replace</button>` : ''}
+          </div>
+        </div>
+      `;
+
+      container.appendChild(messageDiv);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    private showTaskExecuting(taskId: string) {
+      const container = this.sidebar?.querySelector('#messages-container');
+      if (!container) return;
+
+      const taskName = taskId === 'summarize-page' ? 'Summarizing page' : 'Rephrasing text';
+
+      const messageDiv = document.createElement('div');
+      messageDiv.id = 'executing-task';
+      messageDiv.style.cssText = `
+        display: flex;
+        justify-content: flex-start;
+        margin-bottom: 8px;
+      `;
+
+      messageDiv.innerHTML = `
+        <div style="background: #f3f4f6; color: #6b7280; padding: 8px 12px; border-radius: 12px 12px 12px 4px; font-size: 14px; line-height: 1.4;">
+          <span style="animation: pulse 1.5s infinite;">🤔</span> ${taskName}...
+        </div>
+      `;
+
+      container.appendChild(messageDiv);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    private showTyping() {
+      const container = this.sidebar?.querySelector('#messages-container');
+      if (!container) return;
+
+      const messageDiv = document.createElement('div');
+      messageDiv.id = 'typing-indicator';
+      messageDiv.style.cssText = `
+        display: flex;
+        justify-content: flex-start;
+        margin-bottom: 8px;
+      `;
+
+      messageDiv.innerHTML = `
+        <div style="background: #f3f4f6; color: #6b7280; padding: 8px 12px; border-radius: 12px 12px 12px 4px; font-size: 14px;">
+          <span style="animation: pulse 1.5s infinite;">💭</span> Thinking...
+        </div>
+      `;
+
+      container.appendChild(messageDiv);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    private removeTyping() {
+      const indicator = this.sidebar?.querySelector('#typing-indicator');
+      indicator?.remove();
+    }
+
+    private showError(message: string) {
+      const executing = this.sidebar?.querySelector('#executing-task');
+      executing?.remove();
+
+      this.removeTyping();
+
+      const container = this.sidebar?.querySelector('#messages-container');
+      if (!container) return;
+
+      const messageDiv = document.createElement('div');
+      messageDiv.style.cssText = `
+        display: flex;
+        justify-content: flex-start;
+        margin-bottom: 8px;
+      `;
+
+      messageDiv.innerHTML = `
+        <div style="background: #fef2f2; color: #dc2626; padding: 8px 12px; border-radius: 12px 12px 12px 4px; font-size: 14px; line-height: 1.4; border: 1px solid #fecaca;">
+          ⚠️ ${this.escapeHtml(message)}
+        </div>
+      `;
+
+      container.appendChild(messageDiv);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    private formatMarkdown(text: string): string {
+      // Simple markdown formatting
+      return text
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(
+          /`(.*?)`/g,
+          '<code style="background: #f3f4f6; padding: 2px 4px; border-radius: 3px; font-size: 13px;">$1</code>'
+        )
+        .replace(/\n/g, '<br>');
+    }
+
+    private escapeHtml(text: string): string {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
     }
 
     private close() {
@@ -437,12 +793,35 @@
     icon.init();
     sidebar.init(icon);
 
-    // Global API for debugging
+    // Global API for debugging and functionality
     (window as any).Buddy = {
       version: '1.0.0',
       icon,
       sidebar,
       toggleSidebar: () => document.dispatchEvent(new CustomEvent(BUDDY_EVENTS.TOGGLE_SIDEBAR)),
+      replaceSelectedText: (newText: string) => {
+        // Simple text replacement - try to replace the last selected text
+        const selection = window.getSelection();
+        if (selection && selection.rangeCount > 0) {
+          try {
+            const range = selection.getRangeAt(0);
+            range.deleteContents();
+            range.insertNode(document.createTextNode(newText));
+            selection.removeAllRanges();
+            selection.addRange(range);
+          } catch (error) {
+            // Fallback to clipboard
+            navigator.clipboard.writeText(newText);
+            alert(
+              'Text copied to clipboard. Original selection could not be replaced automatically.'
+            );
+          }
+        } else {
+          // No selection, just copy to clipboard
+          navigator.clipboard.writeText(newText);
+          alert('Text copied to clipboard. Please select text first to replace it automatically.');
+        }
+      },
     };
 
     console.log('Buddy extension loaded successfully!');
