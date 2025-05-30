@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Buddy",
+  "version": "1.0.0",
+  "description": "AI assistant Chrome extension for intelligent content interaction",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "src/background/service-worker-standalone.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/buddy-standalone.js"],
+      "css": ["src/content/buddy.css"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_title": "Open Buddy"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["src/sidebar/*", "src/management/*", "src/assets/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

@@ -1,0 +1,205 @@
+/* Buddy Extension Base Styles */
+
+/* Reset and isolation */
+.buddy-container,
+.buddy-container * {
+  box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+/* Icon styles are defined in buddy-icon.ts */
+
+/* Sidebar container */
+.buddy-sidebar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  background: white;
+  border-left: 1px solid #e5e7eb;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.1);
+  z-index: 2147483646;
+  transform: translateX(100%);
+  transition: transform 0.3s ease;
+  overflow: hidden;
+  font-family: inherit;
+}
+
+.buddy-sidebar.open {
+  transform: translateX(0);
+}
+
+.buddy-sidebar.resizing {
+  transition: none;
+}
+
+/* Resize handle */
+.buddy-resize-handle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 4px;
+  height: 100%;
+  background: transparent;
+  cursor: col-resize;
+  z-index: 1;
+}
+
+.buddy-resize-handle:hover,
+.buddy-resize-handle.active {
+  background: #3b82f6;
+}
+
+/* Body adjustment when sidebar is open */
+body.buddy-sidebar-open {
+  transition: margin-right 0.3s ease;
+}
+
+/* Loading states */
+.buddy-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.buddy-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #e5e7eb;
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: buddy-spin 1s linear infinite;
+}
+
+@keyframes buddy-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Button styles */
+.buddy-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: white;
+  color: #374151;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+}
+
+.buddy-button:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+
+.buddy-button:active {
+  background: #f3f4f6;
+}
+
+.buddy-button.primary {
+  background: #3b82f6;
+  border-color: #3b82f6;
+  color: white;
+}
+
+.buddy-button.primary:hover {
+  background: #2563eb;
+  border-color: #2563eb;
+}
+
+.buddy-button.small {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+/* Input styles */
+.buddy-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  transition: border-color 0.2s ease;
+}
+
+.buddy-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Text selection highlight override */
+.buddy-sidebar *::selection {
+  background: #3b82f6;
+  color: white;
+}
+
+/* Scrollbar styling */
+.buddy-sidebar ::-webkit-scrollbar {
+  width: 6px;
+}
+
+.buddy-sidebar ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.buddy-sidebar ::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+
+.buddy-sidebar ::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+  .buddy-sidebar {
+    width: 100vw !important;
+    left: 0;
+    right: 0;
+  }
+  
+  .buddy-resize-handle {
+    display: none;
+  }
+  
+  body.buddy-sidebar-open {
+    margin-right: 0;
+    overflow: hidden;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .buddy-sidebar {
+    border-left-width: 2px;
+    border-left-color: #000;
+  }
+  
+  .buddy-button {
+    border-width: 2px;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .buddy-sidebar,
+  .buddy-button,
+  .buddy-input,
+  body.buddy-sidebar-open {
+    transition: none;
+  }
+  
+  .buddy-spinner {
+    animation: none;
+  }
+}

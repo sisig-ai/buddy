@@ -1,0 +1,42 @@
+{
+  "name": "buddy-extension",
+  "version": "1.0.0",
+  "description": "AI assistant Chrome extension for intelligent content interaction",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run build:watch",
+    "build": "bun run clean && bun run build:ts && bun run build:assets",
+    "build:ts": "mkdir -p dist && bun build src/background/service-worker-standalone.ts --outfile=dist/src/background/service-worker-standalone.js --target=browser --format=iife && bun build src/content/buddy-standalone.ts --outfile=dist/src/content/buddy-standalone.js --target=browser --format=iife",
+    "build:assets": "mkdir -p dist/src && cp -r src/content/buddy.css dist/src/content/ && cp manifest.json dist/ && mkdir -p dist/src/assets/icons",
+    "build:watch": "bun run build && bun --watch src/**/*.ts run build:ts",
+    "test": "bun test",
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "format": "prettier --write src/**/*.ts",
+    "format:check": "prettier --check src/**/*.ts",
+    "prepare": "husky",
+    "clean": "rm -rf dist"
+  },
+  "lint-staged": {
+    "src/**/*.{ts,js}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md}": [
+      "prettier --write"
+    ]
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.268",
+    "@typescript-eslint/eslint-plugin": "^8.33.0",
+    "@typescript-eslint/parser": "^8.33.0",
+    "eslint": "^8.57.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.1.0",
+    "prettier": "^3.2.5",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "marked": "^12.0.0"
+  }
+}
