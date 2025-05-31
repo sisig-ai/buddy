@@ -4,6 +4,8 @@ export interface Task {
   description: string;
   inputType: 'page' | 'selection';
   prompt: string;
+  icon?: string; // Emoji or icon identifier
+  color?: string; // Hex color code
   isBuiltIn: boolean;
   createdAt: number;
   updatedAt: number;
@@ -28,6 +30,8 @@ export interface Conversation {
 
 export interface BuddySettings {
   apiKey?: string;
+  selectedModel?: string;
+  showDebugMessages?: boolean;
   sidebarWidth: number;
   iconPosition: number;
   blacklistedSites: string[];

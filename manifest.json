@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Buddy",
-  "version": "1.1.1",
+  "version": "1.1.4",
   "description": "AI assistant Chrome extension for intelligent content interaction",
   "permissions": ["storage", "activeTab", "scripting", "tabs"],
   "host_permissions": ["<all_urls>"],

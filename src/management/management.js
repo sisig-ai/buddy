@@ -15,6 +15,13 @@ class ManagementUI {
     this.saveApiKeyBtn = document.getElementById('save-api-key');
     this.clearApiKeyBtn = document.getElementById('clear-api-key');
 
+    // Model selection elements
+    this.modelSelect = document.getElementById('model-select');
+    this.refreshModelsBtn = document.getElementById('refresh-models');
+
+    // Debug messages toggle
+    this.debugToggle = document.getElementById('debug-messages-toggle');
+
     // Blacklist elements
     this.blacklistInput = document.getElementById('blacklist-input');
     this.addBlacklistBtn = document.getElementById('add-blacklist');
@@ -38,6 +45,13 @@ class ManagementUI {
     // API Key
     this.saveApiKeyBtn.addEventListener('click', () => this.saveApiKey());
     this.clearApiKeyBtn.addEventListener('click', () => this.clearApiKey());
+
+    // Model selection
+    this.modelSelect.addEventListener('change', () => this.saveSelectedModel());
+    this.refreshModelsBtn.addEventListener('click', () => this.loadAvailableModels());
+
+    // Debug messages toggle
+    this.debugToggle.addEventListener('change', () => this.saveDebugSetting());
 
     // Blacklist
     this.addBlacklistBtn.addEventListener('click', () => this.addToBlacklist());
@@ -67,6 +81,12 @@ class ManagementUI {
       this.apiKeyInput.value = '•'.repeat(20);
       this.apiKeyInput.dataset.hasKey = 'true';
     }
+
+    // Load available models and current selection
+    await this.loadAvailableModels();
+
+    // Load debug messages setting
+    await this.loadDebugSetting();
 
     // Load blacklist
     await this.loadBlacklist();
@@ -111,6 +131,102 @@ class ManagementUI {
       this.showMessage('API key cleared', 'success');
     } catch (error) {
       this.showMessage('Error clearing API key', 'error');
+    }
+  }
+
+  async loadAvailableModels() {
+    try {
+      // First, load current settings to get selected model
+      const settings = await this.storage.getSettings();
+      const currentModel = settings.selectedModel || 'claude-3-5-sonnet-20241022';
+
+      // Try to get models from API
+      const response = await chrome.runtime.sendMessage({
+        type: 'GET_AVAILABLE_MODELS',
+      });
+
+      if (response.success && response.models) {
+        // Clear dropdown
+        this.modelSelect.innerHTML = '';
+
+        // Add models to dropdown
+        response.models.forEach(model => {
+          const option = document.createElement('option');
+          option.value = model.id;
+          option.textContent = model.display_name;
+          if (model.id === currentModel) {
+            option.selected = true;
+          }
+          this.modelSelect.appendChild(option);
+        });
+
+        this.showMessage('Models loaded successfully', 'success');
+      } else {
+        // Fallback to default models if API call fails
+        const defaultModels = [
+          { id: 'claude-3-5-sonnet-20241022', display_name: 'Claude 3.5 Sonnet' },
+          { id: 'claude-3-sonnet-20240229', display_name: 'Claude 3 Sonnet' },
+          { id: 'claude-3-haiku-20240307', display_name: 'Claude 3 Haiku' },
+        ];
+
+        this.modelSelect.innerHTML = '';
+        defaultModels.forEach(model => {
+          const option = document.createElement('option');
+          option.value = model.id;
+          option.textContent = model.display_name;
+          if (model.id === currentModel) {
+            option.selected = true;
+          }
+          this.modelSelect.appendChild(option);
+        });
+
+        this.showMessage(response.error || 'Using default models list', 'error');
+      }
+    } catch (error) {
+      console.error('Failed to load models:', error);
+      this.showMessage('Failed to load models', 'error');
+    }
+  }
+
+  async saveSelectedModel() {
+    const selectedModel = this.modelSelect.value;
+    if (!selectedModel) return;
+
+    try {
+      await chrome.runtime.sendMessage({
+        type: 'UPDATE_SETTINGS',
+        data: { selectedModel },
+      });
+
+      this.showMessage('Model updated successfully', 'success');
+    } catch (error) {
+      console.error('Failed to save model:', error);
+      this.showMessage('Failed to save model selection', 'error');
+    }
+  }
+
+  async loadDebugSetting() {
+    try {
+      const settings = await this.storage.getSettings();
+      this.debugToggle.checked = settings.showDebugMessages || false;
+    } catch (error) {
+      console.error('Failed to load debug setting:', error);
+    }
+  }
+
+  async saveDebugSetting() {
+    try {
+      const showDebugMessages = this.debugToggle.checked;
+
+      await chrome.runtime.sendMessage({
+        type: 'UPDATE_SETTINGS',
+        data: { showDebugMessages },
+      });
+
+      this.showMessage(`Debug messages ${showDebugMessages ? 'enabled' : 'disabled'}`, 'success');
+    } catch (error) {
+      console.error('Failed to save debug setting:', error);
+      this.showMessage('Failed to save debug setting', 'error');
     }
   }
 
@@ -190,15 +306,33 @@ class ManagementUI {
     const div = document.createElement('div');
     div.className = 'task-item';
     div.innerHTML = `
-      <div>
-        <strong>${task.name}</strong>
-        <p style="font-size: 12px; color: #666; margin: 4px 0 0 0;">${task.description}</p>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <div style="width: 40px; height: 40px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 20px; background-color: ${task.color || '#e8eaed'}; color: ${this.getContrastColor(task.color || '#e8eaed')};">
+          ${task.icon || '📋'}
+        </div>
+        <div style="flex: 1;">
+          <strong>${task.name}</strong>
+          <p style="font-size: 12px; color: #666; margin: 4px 0 0 0;">${task.description}</p>
+        </div>
       </div>
       <button class="btn btn-secondary" data-task-id="${task.id}">Delete</button>
     `;
 
     div.querySelector('button').addEventListener('click', () => this.deleteTask(task.id));
     return div;
+  }
+
+  getContrastColor(hexColor) {
+    // Convert hex to RGB
+    const r = parseInt(hexColor.slice(1, 3), 16);
+    const g = parseInt(hexColor.slice(3, 5), 16);
+    const b = parseInt(hexColor.slice(5, 7), 16);
+
+    // Calculate luminance
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+
+    // Return black or white based on luminance
+    return luminance > 0.5 ? '#000000' : '#ffffff';
   }
 
   showTaskModal() {
@@ -219,6 +353,8 @@ class ManagementUI {
       name: document.getElementById('task-name').value.trim(),
       description: document.getElementById('task-description').value.trim(),
       inputType: document.getElementById('task-input-type').value,
+      icon: document.getElementById('task-icon').value.trim() || '📋',
+      color: document.getElementById('task-color').value,
       prompt: document.getElementById('task-prompt').value.trim(),
       isBuiltIn: false,
       createdAt: Date.now(),

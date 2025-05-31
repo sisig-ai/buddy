@@ -53,7 +53,9 @@ class BuddyServiceWorker {
   private async initializeAnthropicAPI() {
     const apiKey = await this.storage.getApiKey();
     if (apiKey) {
-      this.anthropicAPI = new AnthropicAPI(apiKey);
+      const settings = await this.storage.getSettings();
+      const selectedModel = settings.selectedModel || 'claude-3-5-sonnet-20241022';
+      this.anthropicAPI = new AnthropicAPI(apiKey, selectedModel);
     }
   }
 
@@ -80,7 +82,15 @@ class BuddyServiceWorker {
         return await this.storage.getSettings();
 
       case 'UPDATE_SETTINGS':
-        return await this.storage.saveSettings(request.data);
+        await this.storage.saveSettings(request.data);
+        // If model was changed, reinitialize API
+        if (request.data.selectedModel && this.anthropicAPI) {
+          this.anthropicAPI.setModel(request.data.selectedModel);
+        }
+        return { success: true };
+
+      case 'GET_AVAILABLE_MODELS':
+        return await this.getAvailableModels();
 
       case 'DELETE_CONVERSATION':
         return await this.storage.deleteConversation(request.data.conversationId);
@@ -105,6 +115,11 @@ class BuddyServiceWorker {
 
   private async executeTask(request: TaskExecutionRequest): Promise<TaskExecutionResponse> {
     try {
+      // Try to initialize API if not already done
+      if (!this.anthropicAPI) {
+        await this.initializeAnthropicAPI();
+      }
+
       if (!this.anthropicAPI) {
         throw new Error('API key not configured. Please set your Anthropic API key in settings.');
       }
@@ -198,7 +213,9 @@ class BuddyServiceWorker {
   private async updateApiKey(apiKey: string): Promise<{ success: boolean }> {
     try {
       await this.storage.saveApiKey(apiKey);
-      this.anthropicAPI = new AnthropicAPI(apiKey);
+      const settings = await this.storage.getSettings();
+      const selectedModel = settings.selectedModel || 'claude-3-5-sonnet-20241022';
+      this.anthropicAPI = new AnthropicAPI(apiKey, selectedModel);
       return { success: true };
     } catch (error) {
       console.error('Failed to update API key:', error);
@@ -235,10 +252,16 @@ class BuddyServiceWorker {
     request: {
       message: string;
       conversationId?: string;
+      showDebugMessages?: boolean;
     },
     senderTabId?: number
   ): Promise<{ success: boolean; result?: string; conversationId: string; error?: string }> {
     try {
+      // Try to initialize API if not already done
+      if (!this.anthropicAPI) {
+        await this.initializeAnthropicAPI();
+      }
+
       if (!this.anthropicAPI) {
         throw new Error('API key not configured. Please set your Anthropic API key in settings.');
       }
@@ -333,8 +356,9 @@ class BuddyServiceWorker {
         timestamp: Date.now(),
       };
 
-      // Add debug message if tool was used
+      // Add debug message if tool was used and debug is enabled
       if (
+        request.showDebugMessages &&
         (this.anthropicAPI as any).lastToolCalls &&
         (this.anthropicAPI as any).lastToolCalls.length > 0
       ) {
@@ -372,6 +396,34 @@ class BuddyServiceWorker {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error occurred',
         conversationId: request.conversationId || generateId(),
+      };
+    }
+  }
+
+  private async getAvailableModels(): Promise<any> {
+    try {
+      // Try to initialize API if not already done
+      if (!this.anthropicAPI) {
+        await this.initializeAnthropicAPI();
+      }
+
+      if (!this.anthropicAPI) {
+        return {
+          success: false,
+          error: 'API key not configured. Please set your Anthropic API key in settings.',
+        };
+      }
+
+      const models = await this.anthropicAPI.getAvailableModels();
+      return {
+        success: true,
+        models,
+      };
+    } catch (error) {
+      console.error('Failed to get available models:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to fetch models',
       };
     }
   }

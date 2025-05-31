@@ -55,7 +55,8 @@ Through collaborative design sessions, the following key architectural decisions
 
 - ✅ Project specification and architecture complete
 - ✅ Technical implementation plan documented
-- 🔄 Ready to begin Chrome extension development
+- ✅ Core Chrome extension functionality implemented
+- ✅ Version 1.1.4 released with major feature enhancements
 
 ## Code Implementation Guidelines
 
@@ -220,3 +221,94 @@ Follow the phases outlined in IMPLEMENTATION.md:
 
 - remember to rebuild the extension whenever you make changes
 - remember to bump the version every time we build. use semantic versioning
+
+## Implemented Features (v1.1.4)
+
+### Core Functionality
+
+- **Direct Chat Interface**: Users can type messages without selecting a task first
+- **Tool-Calling Capability**: LLM can read current page content using the `read_page_content` tool
+- **Conversation Management**:
+  - Persistent conversation storage with individual keys to avoid Chrome storage limits
+  - Conversation history panel with modern card-based UI
+  - Automatic cleanup of old conversations
+  - Tasks create new conversations instead of continuing existing ones
+
+### User Interface Enhancements
+
+- **Icon-Based Task Chooser**:
+  - 4x2 grid layout showing up to 7 tasks with icons
+  - Customizable task icons (emoji) and colors
+  - "Show more" modal for additional tasks
+  - Hover tooltips showing task names
+  - Smooth animations and visual feedback
+- **Modern Design Elements**:
+  - Hide buddy icon when sidebar is open
+  - Resizable sidebar that pushes page content
+  - Markdown rendering for assistant messages using the `marked` library
+  - Welcome message displayed as initial assistant message
+  - Auto-scrolling to bottom when LLM responds
+
+### Advanced Features
+
+- **Model Selection**:
+  - Customizable Claude model selection in admin page
+  - Fetches available models from Anthropic API
+  - Default fallback models if API is unavailable
+  - Model preference persists across sessions
+- **Debug Mode**:
+  - Toggleable debug messages (yellow bubbles)
+  - Shows tool calls and context information
+  - OFF by default for cleaner experience
+  - Setting persists across sessions
+- **Settings Management**:
+  - Comprehensive settings page for API configuration
+  - Site blacklist management
+  - Custom task creation with icon and color selection
+  - Data export/import functionality
+
+### Technical Improvements
+
+- **Storage Architecture**:
+  - Migration from array-based to individual conversation storage
+  - Automatic migration for existing users
+  - Efficient storage usage within Chrome's limits
+- **API Integration**:
+  - Automatic API initialization when needed
+  - Shared API key across all tasks and features
+  - CORS headers for direct browser access
+  - Error handling and graceful fallbacks
+- **Build System**:
+  - Bun bundler for TypeScript compilation
+  - Modular file structure with ES6 modules
+  - IIFE bundles for Chrome extension compatibility
+
+### Bug Fixes & Optimizations
+
+- Fixed storage quota exceeded errors
+- Fixed tab context issues for content script communication
+- Fixed API key sharing between tasks
+- Improved markdown rendering with proper spacing
+- Enhanced auto-scrolling reliability
+- Better contrast calculation for task icons
+
+## Development Notes
+
+### Key Files Modified
+
+- `src/sidebar/sidebar.js`: Main UI logic and task grid implementation
+- `src/sidebar/sidebar.html`: Updated structure for icon-based tasks
+- `src/sidebar/sidebar.css`: Modern styling with animations
+- `src/background/service-worker.ts`: Enhanced API handling and tool support
+- `src/shared/storage-manager.ts`: Individual conversation storage
+- `src/management/management.js`: Model selection and debug toggle
+- `src/shared/types.ts`: Updated interfaces for new features
+- `src/background/api/anthropic.ts`: Model selection and API improvements
+
+### Chrome Extension Specifics
+
+- Uses Manifest V3 for modern Chrome compatibility
+- Service worker handles background tasks and API calls
+- Content scripts inject sidebar and handle page interactions
+- Message passing between components for proper context
+- Web accessible resources for sidebar and management pages

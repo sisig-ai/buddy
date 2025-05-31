@@ -1,16 +1,41 @@
 import { PageParser } from '../content/page-parser.js';
 import { StorageManager } from '../shared/storage-manager.js';
 import { generateId } from '../shared/utils.js';
+import { marked } from 'marked';
 
-// Simple markdown renderer
+// Configure marked for optimal rendering
+marked.setOptions({
+  breaks: false, // Don't convert single line breaks to <br>
+  gfm: true, // GitHub Flavored Markdown
+  headerIds: false, // Don't generate header IDs
+  mangle: false, // Don't mangle email addresses
+});
+
+// Custom renderer for better control
+const renderer = new marked.Renderer();
+
+// Open links in new tab
+renderer.link = (href, title, text) => {
+  return `<a href="${href}" target="_blank" rel="noopener"${title ? ` title="${title}"` : ''}>${text}</a>`;
+};
+
+// Apply custom renderer
+marked.setOptions({ renderer });
+
+// Simple markdown rendering function using marked
 const renderMarkdown = text => {
-  return text
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`(.+?)`/g, '<code>$1</code>')
-    .replace(/```([\s\S]+?)```/g, '<pre><code>$1</code></pre>')
-    .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank">$1</a>')
-    .replace(/\n/g, '<br>');
+  if (!text || typeof text !== 'string') return '';
+
+  try {
+    return marked.parse(text);
+  } catch (error) {
+    console.error('Markdown rendering error:', error);
+    // Fallback to escaped text
+    return `<p>${text.replace(/[&<>"']/g, char => {
+      const escapeMap = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+      return escapeMap[char];
+    })}</p>`;
+  }
 };
 
 class BuddySidebarUI {
@@ -20,7 +45,10 @@ class BuddySidebarUI {
     this.chatMessages = document.getElementById('chat-messages');
     this.chatInput = document.getElementById('chat-input');
     this.sendBtn = document.getElementById('send-btn');
-    this.taskSelect = document.getElementById('task-select');
+    this.taskGrid = document.getElementById('task-grid');
+    this.taskModal = document.getElementById('task-modal');
+    this.taskModalGrid = document.getElementById('task-modal-grid');
+    this.closeTaskModalBtn = document.getElementById('close-task-modal');
     this.settingsBtn = document.getElementById('settings-btn');
     this.historyBtn = document.getElementById('history-btn');
     this.newChatBtn = document.getElementById('new-chat-btn');
@@ -30,12 +58,15 @@ class BuddySidebarUI {
     this.currentConversationId = null;
     this.isProcessing = false;
     this.pageInfo = null;
+    this.showDebugMessages = false; // Will be loaded from settings
+    this.tasks = [];
     this.init();
   }
 
   async init() {
     await this.loadTasks();
     await this.loadPageInfo();
+    await this.loadSettings();
     this.setupEventListeners();
     this.updateEmptyState();
     this.focusInput();
@@ -68,29 +99,36 @@ class BuddySidebarUI {
     });
   }
 
+  async loadSettings() {
+    try {
+      const settings = await this.storage.getSettings();
+      this.showDebugMessages = settings.showDebugMessages || false;
+    } catch (error) {
+      console.error('Failed to load settings:', error);
+      this.showDebugMessages = false;
+    }
+  }
+
   updateEmptyState() {
-    const emptyState = this.chatMessages.querySelector('.empty-state');
-    if (emptyState && this.pageInfo) {
-      const pageInfoHtml = `
-        <div style="margin-top: 16px; padding: 12px; background: #f5f5f5; border-radius: 8px; text-align: left;">
-          <strong>Current page:</strong><br>
-          <span style="color: #666; font-size: 13px;">${this.escapeHtml(this.pageInfo.title)}</span>
-        </div>
-      `;
+    // Add initial assistant message if chat is empty
+    if (this.chatMessages.children.length === 0) {
+      let welcomeMessage = `👋 Hi! I'm Buddy, your AI assistant.
 
-      const exampleQuestions = `
-        <div style="margin-top: 16px;">
-          <p style="font-weight: 500;">Try asking:</p>
-          <ul style="margin-top: 8px;">
-            <li>"What is this page about?"</li>
-            <li>"Summarize this content"</li>
-            <li>"What is this repo?" (on GitHub)</li>
-            <li>"Find the main points"</li>
-          </ul>
-        </div>
-      `;
+You can:
+• Click a task icon above to process the page content
+• Or just type a message below to chat with me
+• I can help you understand and work with the content on this page`;
 
-      emptyState.innerHTML += pageInfoHtml + exampleQuestions;
+      if (this.pageInfo) {
+        welcomeMessage += `\n\n**Current page:** ${this.pageInfo.title}`;
+        welcomeMessage += `\n\nTry asking:
+• "What is this page about?"
+• "Summarize this content"
+• "What is this repo?" (on GitHub)
+• "Find the main points"`;
+      }
+
+      this.addMessage('assistant', welcomeMessage, false);
     }
   }
 
@@ -102,29 +140,76 @@ class BuddySidebarUI {
 
   async loadTasks() {
     try {
-      const tasks = await this.storage.getTasks();
-
-      // Clear existing options
-      this.taskSelect.innerHTML = '<option value="">Choose a task...</option>';
-
-      // Add tasks to dropdown
-      tasks.forEach(task => {
-        const option = document.createElement('option');
-        option.value = task.id;
-        option.textContent = task.name;
-        option.dataset.inputType = task.inputType;
-        this.taskSelect.appendChild(option);
-      });
+      this.tasks = await this.storage.getTasks();
+      this.renderTaskGrid();
     } catch (error) {
       console.error('Failed to load tasks:', error);
     }
   }
 
+  renderTaskGrid() {
+    // Clear existing grid
+    this.taskGrid.innerHTML = '';
+
+    // Show first 7 tasks in main grid
+    const visibleTasks = this.tasks.slice(0, 7);
+    const hasMore = this.tasks.length > 7;
+
+    visibleTasks.forEach(task => {
+      const taskIcon = this.createTaskIcon(task);
+      this.taskGrid.appendChild(taskIcon);
+    });
+
+    // Add "show more" icon if there are more than 7 tasks
+    if (hasMore) {
+      const showMoreIcon = document.createElement('div');
+      showMoreIcon.className = 'task-icon show-more-icon';
+      showMoreIcon.innerHTML = `
+        <span>⋯</span>
+        <div class="task-icon-tooltip">More tasks</div>
+      `;
+      showMoreIcon.addEventListener('click', () => this.showTaskModal());
+      this.taskGrid.appendChild(showMoreIcon);
+    }
+  }
+
+  createTaskIcon(task) {
+    const iconDiv = document.createElement('div');
+    iconDiv.className = 'task-icon';
+    iconDiv.style.backgroundColor = task.color || '#e8eaed';
+    iconDiv.style.color = this.getContrastColor(task.color || '#e8eaed');
+    iconDiv.dataset.taskId = task.id;
+    iconDiv.dataset.inputType = task.inputType;
+
+    iconDiv.innerHTML = `
+      <span>${task.icon || '📋'}</span>
+      <div class="task-icon-tooltip">${this.escapeHtml(task.name)}</div>
+    `;
+
+    iconDiv.addEventListener('click', () => this.executeTask(task));
+
+    return iconDiv;
+  }
+
+  getContrastColor(hexColor) {
+    // Convert hex to RGB
+    const r = parseInt(hexColor.slice(1, 3), 16);
+    const g = parseInt(hexColor.slice(3, 5), 16);
+    const b = parseInt(hexColor.slice(5, 7), 16);
+
+    // Calculate luminance
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+
+    // Return black or white based on luminance
+    return luminance > 0.5 ? '#000000' : '#ffffff';
+  }
+
   setupEventListeners() {
-    // Task selection
-    this.taskSelect.addEventListener('change', e => {
-      if (e.target.value) {
-        this.executeSelectedTask();
+    // Task modal
+    this.closeTaskModalBtn.addEventListener('click', () => this.hideTaskModal());
+    this.taskModal.addEventListener('click', e => {
+      if (e.target === this.taskModal) {
+        this.hideTaskModal();
       }
     });
 
@@ -173,22 +258,35 @@ class BuddySidebarUI {
     });
   }
 
-  async executeSelectedTask() {
-    const taskId = this.taskSelect.value;
-    if (!taskId || this.isProcessing) return;
+  showTaskModal() {
+    // Clear modal grid
+    this.taskModalGrid.innerHTML = '';
 
-    const selectedOption = this.taskSelect.selectedOptions[0];
-    const inputType = selectedOption.dataset.inputType;
+    // Add all tasks to modal
+    this.tasks.forEach(task => {
+      const taskIcon = this.createTaskIcon(task);
+      this.taskModalGrid.appendChild(taskIcon);
+    });
+
+    // Show modal
+    this.taskModal.style.display = 'flex';
+  }
+
+  hideTaskModal() {
+    this.taskModal.style.display = 'none';
+  }
+
+  async executeTask(task) {
+    if (this.isProcessing) return;
 
     try {
       // Get content based on input type
       let content = '';
-      if (inputType === 'selection') {
+      if (task.inputType === 'selection') {
         // Get selected text from parent window
         const selection = await this.getSelectedText();
         if (!selection) {
           this.showError('Please select some text on the page first.');
-          this.taskSelect.value = '';
           return;
         }
         content = selection;
@@ -197,16 +295,12 @@ class BuddySidebarUI {
         content = await this.getPageContent();
       }
 
-      // Clear task selection
-      this.taskSelect.value = '';
-
       // Always create a new conversation for task execution
       this.currentConversationId = null;
       this.chatMessages.innerHTML = '';
 
       // Show task execution message
-      const taskName = selectedOption.textContent;
-      this.addMessage('task', `Executing: ${taskName}`);
+      this.addMessage('task', `Executing: ${task.name}`);
 
       // Send task execution request
       this.isProcessing = true;
@@ -215,7 +309,7 @@ class BuddySidebarUI {
       const response = await this.sendMessageThroughParent({
         type: 'EXECUTE_TASK',
         data: {
-          taskId,
+          taskId: task.id,
           content,
           conversationId: null, // Always null to create new conversation
         },
@@ -251,8 +345,8 @@ class BuddySidebarUI {
     // Add user message
     this.addMessage('user', message);
 
-    // Add debug message for context if first message
-    if (!this.currentConversationId && this.pageInfo) {
+    // Add debug message for context if first message and debug is enabled
+    if (!this.currentConversationId && this.pageInfo && this.showDebugMessages) {
       this.addMessage(
         'debug',
         `Initial context:\nPage: ${this.pageInfo.title}\nURL: ${this.pageInfo.url}`
@@ -270,6 +364,7 @@ class BuddySidebarUI {
         data: {
           message,
           conversationId: this.currentConversationId,
+          showDebugMessages: this.showDebugMessages,
         },
       });
 
@@ -341,6 +436,8 @@ class BuddySidebarUI {
     // Render markdown for assistant messages, plain text for others
     if (type === 'assistant') {
       contentDiv.innerHTML = renderMarkdown(content);
+      // Scroll again after markdown is rendered
+      requestAnimationFrame(() => this.scrollToBottom());
     } else {
       contentDiv.textContent = content;
     }
@@ -433,7 +530,10 @@ class BuddySidebarUI {
   }
 
   scrollToBottom() {
-    this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+    // Use requestAnimationFrame to ensure DOM has updated
+    requestAnimationFrame(() => {
+      this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+    });
   }
 
   focusInput() {
@@ -510,7 +610,11 @@ class BuddySidebarUI {
           this.chatMessages.innerHTML = '';
 
           conversation.messages.forEach(msg => {
-            if (msg.type === 'user' || msg.type === 'assistant' || msg.type === 'debug') {
+            if (
+              msg.type === 'user' ||
+              msg.type === 'assistant' ||
+              (msg.type === 'debug' && this.showDebugMessages)
+            ) {
               this.addMessage(msg.type, msg.content, msg.type === 'assistant');
             }
           });
@@ -551,9 +655,14 @@ class BuddySidebarUI {
         const dateStr = this.formatDate(date);
 
         item.innerHTML = `
-          <div class="conversation-title">${this.escapeHtml(conversation.title)}</div>
-          <div class="conversation-date">${dateStr}</div>
+          <div class="conversation-header">
+            <div class="conversation-title">${this.escapeHtml(conversation.title)}</div>
+            <div class="conversation-date">${dateStr}</div>
+          </div>
           <div class="conversation-preview">${this.escapeHtml(preview)}</div>
+          <div class="conversation-actions">
+            <!-- Delete button will be appended here -->
+          </div>
         `;
 
         // Add click handler
@@ -562,7 +671,7 @@ class BuddySidebarUI {
           this.hideHistoryPanel();
         });
 
-        // Add delete button
+        // Add delete button to the actions div
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'delete-conversation-btn';
         deleteBtn.textContent = 'Delete';
@@ -573,7 +682,8 @@ class BuddySidebarUI {
           }
         });
 
-        item.appendChild(deleteBtn);
+        const actionsDiv = item.querySelector('.conversation-actions');
+        actionsDiv.appendChild(deleteBtn);
         this.historyList.appendChild(item);
       });
     } catch (error) {
@@ -617,7 +727,7 @@ class BuddySidebarUI {
           msg.type === 'user' ||
           msg.type === 'assistant' ||
           msg.type === 'task' ||
-          msg.type === 'debug'
+          (msg.type === 'debug' && this.showDebugMessages)
         ) {
           this.addMessage(msg.type, msg.content, msg.type === 'assistant');
         }

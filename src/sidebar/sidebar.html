@@ -10,7 +10,7 @@
   <div class="sidebar-container">
     <!-- Header -->
     <div class="sidebar-header">
-      <h1 class="sidebar-title">Buddy AI Assistant <span style="font-size: 10px; color: #999;">v1.0.2-debug</span></h1>
+      <h1 class="sidebar-title">Buddy</h1>
       <div class="header-actions">
         <button class="new-chat-btn" id="new-chat-btn" title="New Chat">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
@@ -42,26 +42,29 @@
       </div>
     </div>
 
-    <!-- Task Selector -->
-    <div class="task-selector">
-      <label for="task-select">Select a task:</label>
-      <select id="task-select" class="task-dropdown">
-        <option value="">Choose a task...</option>
-      </select>
+    <!-- Task Grid -->
+    <div class="task-grid-container">
+      <div class="task-grid" id="task-grid">
+        <!-- Task icons will be dynamically added here -->
+      </div>
+      <!-- Show More Modal -->
+      <div class="task-modal" id="task-modal" style="display: none;">
+        <div class="task-modal-content">
+          <div class="task-modal-header">
+            <h3>All Tasks</h3>
+            <button class="close-modal-btn" id="close-task-modal">×</button>
+          </div>
+          <div class="task-modal-grid" id="task-modal-grid">
+            <!-- All tasks will be shown here -->
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Chat Container -->
     <div class="chat-container" id="chat-container">
       <div class="chat-messages" id="chat-messages">
-        <div class="empty-state">
-          <p>👋 Hi! I'm Buddy, your AI assistant.</p>
-          <p>You can:</p>
-          <ul>
-            <li>Select a task from above to process the page content</li>
-            <li>Or just type a message below to chat with me</li>
-            <li>I can help you understand and work with the content on this page</li>
-          </ul>
-        </div>
+        <!-- Messages will be added here dynamically -->
       </div>
     </div>
 

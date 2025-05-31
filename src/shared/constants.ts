@@ -25,6 +25,8 @@ export const BUILT_IN_TASKS = [
     inputType: 'page' as const,
     prompt:
       'Please provide a clear, concise summary of this webpage content. Focus on the main points and key information.',
+    icon: '📝',
+    color: '#1a73e8',
     isBuiltIn: true,
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -36,6 +38,8 @@ export const BUILT_IN_TASKS = [
     inputType: 'selection' as const,
     prompt:
       'Please rephrase the following text to be clearer, more professional, or better written while maintaining the original meaning:',
+    icon: '✏️',
+    color: '#34a853',
     isBuiltIn: true,
     createdAt: Date.now(),
     updatedAt: Date.now(),

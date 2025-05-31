@@ -62,6 +62,8 @@ export function formatTimestamp(timestamp: number): string {
 
 export function getDefaultSettings(): BuddySettings {
   return {
+    selectedModel: 'claude-3-5-sonnet-20241022',
+    showDebugMessages: false,
     sidebarWidth: BUDDY_CONFIG.SIDEBAR_DEFAULT_WIDTH,
     iconPosition: BUDDY_CONFIG.ICON_DEFAULT_POSITION,
     blacklistedSites: [],

@@ -3,11 +3,17 @@ import type { AnthropicMessage, AnthropicResponse, AnthropicTool } from '../../s
 
 export class AnthropicAPI {
   private apiKey: string;
+  private model: string;
   public currentTabId: number | null = null;
   public lastToolCalls: any[] = [];
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, model: string = 'claude-3-sonnet-20240229') {
     this.apiKey = apiKey;
+    this.model = model;
+  }
+
+  setModel(model: string): void {
+    this.model = model;
   }
 
   async processTask(
@@ -67,7 +73,7 @@ export class AnthropicAPI {
     tools?: AnthropicTool[]
   ): Promise<AnthropicResponse> {
     const requestBody: any = {
-      model: 'claude-3-sonnet-20240229',
+      model: this.model,
       max_tokens: 4000,
       messages: messages,
       system:
@@ -112,6 +118,47 @@ export class AnthropicAPI {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  async getAvailableModels(): Promise<
+    Array<{ id: string; display_name: string; created_at: string }>
+  > {
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/models', {
+        headers: {
+          'x-api-key': this.apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch models: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data.data || [];
+    } catch (error) {
+      console.error('Error fetching available models:', error);
+      // Return default models if API call fails
+      return [
+        {
+          id: 'claude-3-5-sonnet-20241022',
+          display_name: 'Claude 3.5 Sonnet',
+          created_at: '2024-10-22T00:00:00Z',
+        },
+        {
+          id: 'claude-3-sonnet-20240229',
+          display_name: 'Claude 3 Sonnet',
+          created_at: '2024-02-29T00:00:00Z',
+        },
+        {
+          id: 'claude-3-haiku-20240307',
+          display_name: 'Claude 3 Haiku',
+          created_at: '2024-03-07T00:00:00Z',
+        },
+      ];
     }
   }
 
