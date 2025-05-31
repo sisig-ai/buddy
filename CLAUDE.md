@@ -209,6 +209,7 @@ Follow the phases outlined in IMPLEMENTATION.md:
 ### Version Control Strategy
 
 - Use semantic versioning (1.0.0, 1.1.0, etc.)
+- **IMPORTANT**: Bump version in both `package.json` and `manifest.json` before each build
 - Create feature branches for major components
 - Regular commits with descriptive messages
 - Tag releases with version numbers
@@ -216,3 +217,6 @@ Follow the phases outlined in IMPLEMENTATION.md:
 ---
 
 **Remember**: This project emphasizes user control, privacy, and simplicity. Every feature should enhance the browsing experience without being intrusive or compromising user data security.
+
+- remember to rebuild the extension whenever you make changes
+- remember to bump the version every time we build. use semantic versioning

@@ -1,13 +1,13 @@
 {
   "name": "buddy-extension",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "description": "AI assistant Chrome extension for intelligent content interaction",
   "type": "module",
   "scripts": {
     "dev": "bun run build:watch",
     "build": "bun run clean && bun run build:ts && bun run build:assets",
-    "build:ts": "mkdir -p dist && bun build src/background/service-worker-standalone.ts --outfile=dist/src/background/service-worker-standalone.js --target=browser --format=iife && bun build src/content/buddy-standalone.ts --outfile=dist/src/content/buddy-standalone.js --target=browser --format=iife",
-    "build:assets": "mkdir -p dist/src && cp -r src/content/buddy.css dist/src/content/ && cp manifest.json dist/ && mkdir -p dist/src/assets/icons",
+    "build:ts": "mkdir -p dist && bun build src/background/service-worker.ts --outfile=dist/src/background/service-worker-standalone.js --target=browser --format=esm && bun build src/content/main.ts --outfile=dist/src/content/buddy-standalone.js --target=browser --format=esm && bun build src/sidebar/sidebar.js --outfile=dist/src/sidebar/sidebar.js --target=browser --format=iife && bun build src/management/management.js --outfile=dist/src/management/management.js --target=browser --format=iife",
+    "build:assets": "mkdir -p dist/src && cp -r src/content/buddy.css dist/src/content/ && cp manifest.json dist/ && mkdir -p dist/src/assets/icons && mkdir -p dist/src/sidebar && cp src/sidebar/sidebar.html dist/src/sidebar/ && cp src/sidebar/sidebar.css dist/src/sidebar/ && mkdir -p dist/src/management && cp src/management/management.html dist/src/management/ && cp src/management/management.css dist/src/management/",
     "build:watch": "bun run build && bun --watch src/**/*.ts run build:ts",
     "test": "bun test",
     "lint": "eslint src/**/*.ts",

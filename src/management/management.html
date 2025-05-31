@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Buddy Settings</title>
+  <link rel="stylesheet" href="management.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Buddy Settings</h1>
+      <p class="version">Version 1.0.2</p>
+    </header>
+
+    <main>
+      <!-- API Key Section -->
+      <section class="settings-section">
+        <h2>API Configuration</h2>
+        <div class="setting-item">
+          <label for="api-key">Anthropic API Key</label>
+          <div class="input-group">
+            <input type="password" id="api-key" placeholder="Enter your API key" />
+            <button id="save-api-key" class="btn btn-primary">Save</button>
+            <button id="clear-api-key" class="btn btn-secondary">Clear</button>
+          </div>
+          <p class="help-text">
+            Get your API key from <a href="https://console.anthropic.com/api-keys" target="_blank">Anthropic Console</a>
+          </p>
+        </div>
+      </section>
+
+      <!-- Blacklist Section -->
+      <section class="settings-section">
+        <h2>Site Blacklist</h2>
+        <div class="setting-item">
+          <label for="blacklist-input">Add domain to blacklist</label>
+          <div class="input-group">
+            <input type="text" id="blacklist-input" placeholder="example.com" />
+            <button id="add-blacklist" class="btn btn-primary">Add</button>
+          </div>
+          <p class="help-text">Buddy will be disabled on these domains</p>
+          <ul id="blacklist-items" class="blacklist-list"></ul>
+        </div>
+      </section>
+
+      <!-- Custom Tasks Section -->
+      <section class="settings-section">
+        <h2>Custom Tasks</h2>
+        <div class="setting-item">
+          <button id="create-task" class="btn btn-primary">Create New Task</button>
+          <div id="custom-tasks-list" class="tasks-list"></div>
+        </div>
+      </section>
+
+      <!-- Data Management Section -->
+      <section class="settings-section">
+        <h2>Data Management</h2>
+        <div class="setting-item">
+          <button id="clear-conversations" class="btn btn-danger">Clear All Conversations</button>
+          <button id="export-data" class="btn btn-secondary">Export Data</button>
+          <button id="import-data" class="btn btn-secondary">Import Data</button>
+          <input type="file" id="import-file" accept=".json" style="display: none;" />
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>Made with ❤️ by the Buddy team</p>
+    </footer>
+  </div>
+
+  <!-- Task Modal -->
+  <div id="task-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <h2>Create Custom Task</h2>
+      <form id="task-form">
+        <div class="form-group">
+          <label for="task-name">Task Name</label>
+          <input type="text" id="task-name" required />
+        </div>
+        <div class="form-group">
+          <label for="task-description">Description</label>
+          <input type="text" id="task-description" required />
+        </div>
+        <div class="form-group">
+          <label for="task-input-type">Input Type</label>
+          <select id="task-input-type" required>
+            <option value="page">Full Page</option>
+            <option value="selection">Selected Text</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="task-prompt">Prompt</label>
+          <textarea id="task-prompt" rows="4" required placeholder="Enter the prompt that will be sent to the AI..."></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="submit" class="btn btn-primary">Save Task</button>
+          <button type="button" id="cancel-task" class="btn btn-secondary">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="management.js" type="module"></script>
+</body>
+</html>

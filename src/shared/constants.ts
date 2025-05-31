@@ -1,4 +1,4 @@
-window.BUDDY_CONFIG = {
+export const BUDDY_CONFIG = {
   SIDEBAR_DEFAULT_WIDTH: 400,
   SIDEBAR_MIN_WIDTH: 300,
   SIDEBAR_MAX_WIDTH: 800,
@@ -6,16 +6,18 @@ window.BUDDY_CONFIG = {
   ICON_DEFAULT_POSITION: 50, // percentage from top
   ANTHROPIC_API_URL: 'https://api.anthropic.com/v1/messages',
   MAX_CONVERSATION_HISTORY: 50,
+  // Chrome storage limits: 8KB per item, 100KB total sync storage
+  MAX_STORAGE_ITEM_SIZE: 8192, // 8KB in bytes
   STORAGE_KEYS: {
     API_KEY: 'buddy_api_key',
-    CONVERSATIONS: 'buddy_conversations',
+    CONVERSATIONS: 'buddy_conversations', // Legacy key for migration
     TASKS: 'buddy_tasks',
     SETTINGS: 'buddy_settings',
     BLACKLIST: 'buddy_blacklist',
   },
 } as const;
 
-window.BUILT_IN_TASKS = [
+export const BUILT_IN_TASKS = [
   {
     id: 'summarize-page',
     name: 'Summarize this page',
@@ -40,7 +42,7 @@ window.BUILT_IN_TASKS = [
   },
 ] as const;
 
-window.BUDDY_EVENTS = {
+export const BUDDY_EVENTS = {
   TOGGLE_SIDEBAR: 'buddy:toggle-sidebar',
   TASK_EXECUTE: 'buddy:task-execute',
   CONVERSATION_UPDATE: 'buddy:conversation-update',

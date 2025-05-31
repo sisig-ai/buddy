@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Buddy Tab Context Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 40px 20px;
+      line-height: 1.6;
+    }
+    .test-section {
+      margin: 20px 0;
+      padding: 20px;
+      background: #f5f5f5;
+      border-radius: 8px;
+    }
+    code {
+      background: #e0e0e0;
+      padding: 2px 4px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Buddy Tab Context Test Page</h1>
+  
+  <div class="test-section">
+    <h2>Testing Tab Context</h2>
+    <p>This page tests if Buddy correctly identifies and reads content from the current tab.</p>
+    <p>When you ask "What is this page?" or "What is this repo?", Buddy should:</p>
+    <ol>
+      <li>Receive the correct tab ID from the content script</li>
+      <li>Use the <code>read_page_content</code> tool</li>
+      <li>Read THIS page's content (not the sidebar's)</li>
+      <li>Respond with information about THIS test page</li>
+    </ol>
+  </div>
+
+  <div class="test-section">
+    <h2>Debug Information</h2>
+    <p>Open the browser console to see debug messages:</p>
+    <ul>
+      <li>Tab ID being used for content reading</li>
+      <li>Page content being sent to the API</li>
+      <li>Tool calls being made</li>
+    </ul>
+  </div>
+
+  <div class="test-section">
+    <h2>Test Questions to Ask Buddy</h2>
+    <ul>
+      <li>"What is this page?"</li>
+      <li>"What is this page about?"</li>
+      <li>"Summarize this content"</li>
+      <li>"What debug information is mentioned here?"</li>
+    </ul>
+  </div>
+
+  <script>
+    console.log('Test page loaded at:', new Date().toISOString());
+    console.log('Page URL:', window.location.href);
+    console.log('Page title:', document.title);
+  </script>
+</body>
+</html>

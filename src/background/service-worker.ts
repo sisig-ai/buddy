@@ -1,17 +1,18 @@
 import { StorageManager } from '../shared/storage-manager.js';
 import { AnthropicAPI } from './api/anthropic.js';
-import { BUDDY_EVENTS } from '../shared/constants.js';
 import type {
   TaskExecutionRequest,
   TaskExecutionResponse,
   Conversation,
   Message,
+  AnthropicTool,
 } from '../shared/types.js';
 import { generateId } from '../shared/utils.js';
 
 class BuddyServiceWorker {
   private storage = StorageManager.getInstance();
   private anthropicAPI: AnthropicAPI | null = null;
+  private currentTabId: number | null = null;
 
   constructor() {
     this.init();
@@ -57,6 +58,11 @@ class BuddyServiceWorker {
   }
 
   private async handleMessage(request: any, sender: chrome.runtime.MessageSender): Promise<any> {
+    // Store the sender tab ID if message is from content script
+    if (sender.tab?.id) {
+      this.currentTabId = sender.tab.id;
+    }
+
     switch (request.type) {
       case 'EXECUTE_TASK':
         return await this.executeTask(request.data);
@@ -84,6 +90,13 @@ class BuddyServiceWorker {
 
       case 'DELETE_TASK':
         return await this.storage.deleteTask(request.data.taskId);
+
+      case 'SEND_MESSAGE':
+        return await this.sendMessage(request.data, sender.tab?.id);
+
+      case 'OPEN_MANAGEMENT':
+        chrome.tabs.create({ url: chrome.runtime.getURL('src/management/management.html') });
+        return { success: true };
 
       default:
         throw new Error(`Unknown message type: ${request.type}`);
@@ -131,6 +144,9 @@ class BuddyServiceWorker {
           role: m.type === 'user' ? ('user' as const) : ('assistant' as const),
           content: m.content,
         }));
+
+      // Pass tab context to API for tool execution
+      (this.anthropicAPI as any).currentTabId = this.currentTabId;
 
       // Execute task with Anthropic API
       const result = await this.anthropicAPI.processTask(
@@ -212,6 +228,151 @@ class BuddyServiceWorker {
         .catch(() => {
           // Tab might not have content script loaded yet
         });
+    }
+  }
+
+  private async sendMessage(
+    request: {
+      message: string;
+      conversationId?: string;
+    },
+    senderTabId?: number
+  ): Promise<{ success: boolean; result?: string; conversationId: string; error?: string }> {
+    try {
+      if (!this.anthropicAPI) {
+        throw new Error('API key not configured. Please set your Anthropic API key in settings.');
+      }
+
+      // Get or create conversation
+      let conversation: Conversation;
+      if (request.conversationId) {
+        const conversations = await this.storage.getConversations();
+        conversation =
+          conversations.find(c => c.id === request.conversationId) ||
+          this.createNewConversation('Chat');
+      } else {
+        conversation = this.createNewConversation('Chat');
+      }
+
+      // Get page metadata from the sender tab, not the active tab
+      let pageContext = '';
+      const tabId = senderTabId || this.currentTabId;
+
+      if (tabId) {
+        try {
+          const tab = await chrome.tabs.get(tabId);
+          if (tab.url && !tab.url.startsWith('chrome://')) {
+            pageContext = `\n\n[Current page: ${tab.title || 'Untitled'} - ${tab.url}]`;
+          }
+        } catch (error) {
+          console.error('Failed to get tab info:', error);
+        }
+      }
+
+      // Add user message to conversation with page context for first message
+      const messageContent =
+        conversation.messages.length === 0 ? request.message + pageContext : request.message;
+
+      const userMessage: Message = {
+        id: generateId(),
+        type: 'user',
+        content: messageContent,
+        timestamp: Date.now(),
+      };
+
+      conversation.messages.push(userMessage);
+
+      // Get conversation context for API call
+      const conversationHistory = conversation.messages
+        .filter(m => m.type !== 'task')
+        .slice(-10) // Last 10 messages for context
+        .map(m => ({
+          role: m.type === 'user' ? ('user' as const) : ('assistant' as const),
+          content: m.content,
+        }));
+
+      // Define available tools
+      const tools: AnthropicTool[] = [
+        {
+          name: 'read_page_content',
+          description:
+            'Read the visible content of the current web page. Use this when the user asks about "this page", "this site", "this repo", or needs information from the current webpage.',
+          input_schema: {
+            type: 'object',
+            properties: {},
+            required: [],
+          },
+        },
+      ];
+
+      // Pass tab context to API for tool execution
+      (this.anthropicAPI as any).currentTabId = tabId;
+
+      // Add debug info to track what's being sent
+      const debugInfo = {
+        tabId: tabId,
+        pageContext: pageContext,
+        toolsProvided: tools.map(t => t.name),
+        messageWithContext: messageContent,
+      };
+
+      console.log('Sending to API with debug info:', debugInfo);
+
+      // Send message with tool capabilities - include ALL conversation history
+      const result = await this.anthropicAPI.continueConversation(
+        messageContent,
+        conversationHistory.slice(0, -1), // Exclude the just-added user message since we pass it separately
+        tools
+      );
+
+      // Create assistant response message
+      const responseMessage: Message = {
+        id: generateId(),
+        type: 'assistant',
+        content: result,
+        timestamp: Date.now(),
+      };
+
+      // Add debug message if tool was used
+      if (
+        (this.anthropicAPI as any).lastToolCalls &&
+        (this.anthropicAPI as any).lastToolCalls.length > 0
+      ) {
+        const debugMessage: Message = {
+          id: generateId(),
+          type: 'debug' as const,
+          content: `Tool calls made:\n${JSON.stringify(
+            (this.anthropicAPI as any).lastToolCalls.map(tc => ({
+              name: tc.name,
+              input: tc.input,
+            })),
+            null,
+            2
+          )}`,
+          timestamp: Date.now(),
+        };
+        conversation.messages.push(debugMessage);
+      }
+
+      // Update conversation
+      conversation.messages.push(responseMessage);
+      conversation.updatedAt = Date.now();
+
+      // Save conversation
+      await this.storage.saveConversation(conversation);
+
+      return {
+        success: true,
+        result,
+        conversationId: conversation.id,
+      };
+    } catch (error) {
+      console.error('Message sending failed:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+        conversationId: request.conversationId || generateId(),
+      };
     }
   }
 }

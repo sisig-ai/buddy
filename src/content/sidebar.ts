@@ -1,6 +1,7 @@
 import { BUDDY_CONFIG, BUDDY_EVENTS } from '../shared/constants.js';
 import { StorageManager } from '../shared/storage-manager.js';
 import { debounce } from '../shared/utils.js';
+import { PageParser } from './page-parser.js';
 
 export class BuddySidebar {
   private sidebar: HTMLElement | null = null;
@@ -187,11 +188,18 @@ export class BuddySidebar {
     this.updateBodyMargin();
     this.isOpen = true;
 
+    // Hide buddy icon when sidebar is open
+    const buddyIcon = document.getElementById('buddy-icon');
+    if (buddyIcon) {
+      buddyIcon.style.display = 'none';
+    }
+
     // Send message to iframe when it loads
     const iframe = this.sidebar?.querySelector('#buddy-sidebar-content') as HTMLIFrameElement;
     if (iframe) {
       iframe.onload = () => {
         this.sendMessageToSidebar('SIDEBAR_OPENED', {});
+        this.setupIframeMessageHandling(iframe);
       };
     }
   }
@@ -204,6 +212,12 @@ export class BuddySidebar {
     this.sidebar.classList.remove('open');
     document.body.classList.remove('buddy-sidebar-open');
     document.body.style.marginRight = '';
+
+    // Show buddy icon when sidebar is closed
+    const buddyIcon = document.getElementById('buddy-icon');
+    if (buddyIcon) {
+      buddyIcon.style.display = 'block';
+    }
 
     // Remove sidebar after animation
     setTimeout(() => {
@@ -240,6 +254,112 @@ export class BuddySidebar {
   destroy() {
     this.close();
     document.removeEventListener(BUDDY_EVENTS.TOGGLE_SIDEBAR, this.toggle);
+  }
+
+  private setupIframeMessageHandling(iframe: HTMLIFrameElement) {
+    // Listen for messages from the iframe
+    window.addEventListener('message', event => {
+      // Verify the message is from our iframe
+      if (event.source !== iframe.contentWindow) return;
+
+      switch (event.data.type) {
+        case 'GET_PAGE_INFO': {
+          const pageMetadata = PageParser.getPageMetadata();
+          iframe.contentWindow?.postMessage(
+            {
+              type: 'PAGE_INFO',
+              title: pageMetadata.title,
+              url: pageMetadata.url,
+            },
+            '*'
+          );
+          break;
+        }
+
+        case 'GET_PAGE_CONTENT': {
+          const pageContent = PageParser.extractPageContent();
+          const metadata = PageParser.getPageMetadata();
+          iframe.contentWindow?.postMessage(
+            {
+              type: 'PAGE_CONTENT',
+              content: `Page: ${metadata.title}\nURL: ${metadata.url}\n\n${pageContent}`,
+            },
+            '*'
+          );
+          break;
+        }
+
+        case 'GET_SELECTED_TEXT': {
+          const selectedText = PageParser.extractSelectedText();
+          iframe.contentWindow?.postMessage(
+            {
+              type: 'SELECTED_TEXT',
+              content: selectedText,
+            },
+            '*'
+          );
+          break;
+        }
+
+        case 'REPLACE_SELECTED_TEXT':
+          this.replaceSelectedText(event.data.content);
+          break;
+
+        case 'FORWARD_TO_BACKGROUND':
+          // Forward message to background with tab context
+          this.forwardToBackground(event.data.message, event.data.requestId, iframe);
+          break;
+
+        case 'OPEN_MANAGEMENT':
+          // Handle management opening
+          chrome.runtime.sendMessage({ type: 'OPEN_MANAGEMENT' });
+          break;
+      }
+    });
+  }
+
+  private async forwardToBackground(message: any, requestId: string, iframe: HTMLIFrameElement) {
+    try {
+      // Send to background and wait for response
+      const response = await chrome.runtime.sendMessage(message);
+
+      // Send response back to iframe
+      iframe.contentWindow?.postMessage(
+        {
+          type: 'MESSAGE_RESPONSE',
+          requestId: requestId,
+          response: response,
+        },
+        '*'
+      );
+    } catch (error) {
+      // Send error response back to iframe
+      iframe.contentWindow?.postMessage(
+        {
+          type: 'MESSAGE_RESPONSE',
+          requestId: requestId,
+          response: {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          },
+        },
+        '*'
+      );
+    }
+  }
+
+  private replaceSelectedText(newText: string) {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+
+    const range = selection.getRangeAt(0);
+    range.deleteContents();
+
+    const textNode = document.createTextNode(newText);
+    range.insertNode(textNode);
+
+    // Clear selection
+    selection.removeAllRanges();
   }
 }
 

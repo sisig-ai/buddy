@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Buddy Sidebar</title>
+  <link rel="stylesheet" href="sidebar.css">
+</head>
+<body>
+  <div class="sidebar-container">
+    <!-- Header -->
+    <div class="sidebar-header">
+      <h1 class="sidebar-title">Buddy AI Assistant <span style="font-size: 10px; color: #999;">v1.0.2-debug</span></h1>
+      <div class="header-actions">
+        <button class="new-chat-btn" id="new-chat-btn" title="New Chat">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M10 5V15M5 10H15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button class="history-btn" id="history-btn" title="Conversation History">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M10 3V10L14 12M17 10C17 13.866 13.866 17 10 17C6.13401 17 3 13.866 3 10C3 6.13401 6.13401 3 10 3C13.866 3 17 6.13401 17 10Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <button class="settings-btn" id="settings-btn" title="Settings">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M10 12.5C11.38 12.5 12.5 11.38 12.5 10C12.5 8.62 11.38 7.5 10 7.5C8.62 7.5 7.5 8.62 7.5 10C7.5 11.38 8.62 12.5 10 12.5Z" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M16.167 10C16.167 10.275 16.158 10.55 16.142 10.817L17.683 12.017C17.817 12.117 17.858 12.3 17.775 12.45L16.325 14.883C16.242 15.033 16.058 15.092 15.9 15.033L14.058 14.342C13.675 14.625 13.258 14.867 12.808 15.05L12.525 17C12.492 17.167 12.342 17.292 12.167 17.292H9.26699C9.09199 17.292 8.94199 17.167 8.91699 17L8.63366 15.05C8.18366 14.867 7.76699 14.633 7.38366 14.342L5.54199 15.033C5.38366 15.092 5.20033 15.033 5.11699 14.883L3.66699 12.45C3.58366 12.3 3.62533 12.117 3.75866 12.017L5.30033 10.817C5.28366 10.55 5.26699 10.275 5.26699 10C5.26699 9.725 5.27533 9.45 5.30033 9.183L3.75866 7.983C3.62533 7.883 3.58366 7.7 3.66699 7.55L5.11699 5.117C5.20033 4.967 5.38366 4.908 5.54199 4.967L7.38366 5.658C7.76699 5.375 8.18366 5.133 8.63366 4.95L8.91699 3C8.94199 2.833 9.09199 2.708 9.26699 2.708H12.167C12.342 2.708 12.492 2.833 12.517 3L12.8 4.95C13.25 5.133 13.667 5.367 14.05 5.658L15.892 4.967C16.05 4.908 16.233 4.967 16.317 5.117L17.767 7.55C17.85 7.7 17.808 7.883 17.675 7.983L16.133 9.183C16.15 9.45 16.167 9.725 16.167 10Z" stroke="currentColor" stroke-width="1.5"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    
+    <!-- Conversation History Panel (initially hidden) -->
+    <div class="conversation-history" id="conversation-history" style="display: none;">
+      <div class="history-header">
+        <h3>Conversation History</h3>
+        <button class="close-history-btn" id="close-history-btn">×</button>
+      </div>
+      <div class="history-list" id="history-list">
+        <!-- Conversations will be dynamically added here -->
+      </div>
+    </div>
+
+    <!-- Task Selector -->
+    <div class="task-selector">
+      <label for="task-select">Select a task:</label>
+      <select id="task-select" class="task-dropdown">
+        <option value="">Choose a task...</option>
+      </select>
+    </div>
+
+    <!-- Chat Container -->
+    <div class="chat-container" id="chat-container">
+      <div class="chat-messages" id="chat-messages">
+        <div class="empty-state">
+          <p>👋 Hi! I'm Buddy, your AI assistant.</p>
+          <p>You can:</p>
+          <ul>
+            <li>Select a task from above to process the page content</li>
+            <li>Or just type a message below to chat with me</li>
+            <li>I can help you understand and work with the content on this page</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input Area -->
+    <div class="input-area">
+      <textarea 
+        id="chat-input" 
+        class="chat-input" 
+        placeholder="Type a message or select a task..."
+        rows="3"
+      ></textarea>
+      <button id="send-btn" class="send-btn" disabled>
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path d="M3.333 10L17.5 3.333L13.333 16.667L10 10L3.333 10Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+  
+  <script src="sidebar.js" type="module"></script>
+</body>
+</html>

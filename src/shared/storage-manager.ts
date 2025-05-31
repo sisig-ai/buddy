@@ -1,15 +1,46 @@
 import { BUDDY_CONFIG, BUILT_IN_TASKS } from './constants.js';
 import { getDefaultSettings } from './utils.js';
-import type { BuddySettings, Conversation, Task, Message } from './types.js';
+import type { BuddySettings, Conversation, Task } from './types.js';
 
 export class StorageManager {
   private static instance: StorageManager;
+
+  private constructor() {
+    // Run migration on initialization
+    this.migrateConversations();
+  }
 
   static getInstance(): StorageManager {
     if (!StorageManager.instance) {
       StorageManager.instance = new StorageManager();
     }
     return StorageManager.instance;
+  }
+
+  private async migrateConversations(): Promise<void> {
+    try {
+      // Check if we have conversations in the old format
+      const result = await chrome.storage.sync.get(BUDDY_CONFIG.STORAGE_KEYS.CONVERSATIONS);
+      const oldConversations = result[BUDDY_CONFIG.STORAGE_KEYS.CONVERSATIONS];
+
+      if (oldConversations && Array.isArray(oldConversations) && oldConversations.length > 0) {
+        console.log('Migrating conversations to new format...');
+
+        // Save each conversation with its own key
+        for (const conv of oldConversations) {
+          const conversationKey = `buddy_conv_${conv.id}`;
+          await chrome.storage.sync.set({
+            [conversationKey]: conv,
+          });
+        }
+
+        // Remove the old conversations key
+        await chrome.storage.sync.remove(BUDDY_CONFIG.STORAGE_KEYS.CONVERSATIONS);
+        console.log('Migration complete');
+      }
+    } catch (error) {
+      console.error('Error migrating conversations:', error);
+    }
   }
 
   async getSettings(): Promise<BuddySettings> {
@@ -41,35 +72,73 @@ export class StorageManager {
   }
 
   async getConversations(): Promise<Conversation[]> {
-    const result = await chrome.storage.sync.get(BUDDY_CONFIG.STORAGE_KEYS.CONVERSATIONS);
-    return result[BUDDY_CONFIG.STORAGE_KEYS.CONVERSATIONS] || [];
+    // Get all storage keys
+    const allData = await chrome.storage.sync.get(null);
+    const conversations: Conversation[] = [];
+
+    // Filter for conversation keys and parse them
+    for (const [key, value] of Object.entries(allData)) {
+      if (key.startsWith('buddy_conv_')) {
+        conversations.push(value as Conversation);
+      }
+    }
+
+    // Sort by updatedAt descending (newest first)
+    return conversations.sort((a, b) => b.updatedAt - a.updatedAt);
   }
 
   async saveConversation(conversation: Conversation): Promise<void> {
-    const conversations = await this.getConversations();
-    const existingIndex = conversations.findIndex(c => c.id === conversation.id);
+    // Limit messages per conversation to prevent quota issues
+    const MAX_MESSAGES_PER_CONVERSATION = 30;
+    const limitedConversation = {
+      ...conversation,
+      messages: conversation.messages.slice(-MAX_MESSAGES_PER_CONVERSATION),
+    };
 
-    if (existingIndex >= 0) {
-      conversations[existingIndex] = conversation;
-    } else {
-      conversations.unshift(conversation);
+    // Store each conversation with its own key
+    const conversationKey = `buddy_conv_${conversation.id}`;
+
+    try {
+      await chrome.storage.sync.set({
+        [conversationKey]: limitedConversation,
+      });
+    } catch (error) {
+      // If still too large, reduce message count
+      console.error('Storage quota exceeded, reducing message count', error);
+      const reducedConversation = {
+        ...limitedConversation,
+        messages: limitedConversation.messages.slice(-10),
+      };
+
+      await chrome.storage.sync.set({
+        [conversationKey]: reducedConversation,
+      });
     }
 
-    // Limit conversation history
-    const settings = await this.getSettings();
-    const limitedConversations = conversations.slice(0, settings.conversationRetention);
-
-    await chrome.storage.sync.set({
-      [BUDDY_CONFIG.STORAGE_KEYS.CONVERSATIONS]: limitedConversations,
-    });
+    // Clean up old conversations beyond retention limit
+    await this.cleanupOldConversations();
   }
 
   async deleteConversation(conversationId: string): Promise<void> {
+    const conversationKey = `buddy_conv_${conversationId}`;
+    await chrome.storage.sync.remove(conversationKey);
+  }
+
+  private async cleanupOldConversations(): Promise<void> {
+    const settings = await this.getSettings();
     const conversations = await this.getConversations();
-    const filtered = conversations.filter(c => c.id !== conversationId);
-    await chrome.storage.sync.set({
-      [BUDDY_CONFIG.STORAGE_KEYS.CONVERSATIONS]: filtered,
-    });
+
+    // If we have more conversations than the retention limit, delete the oldest ones
+    if (conversations.length > settings.conversationRetention) {
+      const conversationsToDelete = conversations
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .slice(settings.conversationRetention);
+
+      // Remove each old conversation
+      for (const conv of conversationsToDelete) {
+        await this.deleteConversation(conv.id);
+      }
+    }
   }
 
   async getTasks(): Promise<Task[]> {
