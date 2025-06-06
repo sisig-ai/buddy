@@ -7,7 +7,7 @@ export class BuddySidebar {
   private sidebar: HTMLElement | null = null;
   private isOpen = false;
   private isResizing = false;
-  private currentWidth = BUDDY_CONFIG.SIDEBAR_DEFAULT_WIDTH;
+  private currentWidth: number = BUDDY_CONFIG.SIDEBAR_DEFAULT_WIDTH;
   private storage = StorageManager.getInstance();
   private resizeHandle: HTMLElement | null = null;
 
@@ -40,7 +40,7 @@ export class BuddySidebar {
 
   private async loadSettings() {
     const settings = await this.storage.getSettings();
-    this.currentWidth = settings.sidebarWidth;
+    this.currentWidth = settings.sidebarWidth as number;
   }
 
   private createSidebar() {
@@ -107,8 +107,8 @@ export class BuddySidebar {
 
       const deltaX = startX - e.clientX;
       const newWidth = Math.max(
-        BUDDY_CONFIG.SIDEBAR_MIN_WIDTH,
-        Math.min(BUDDY_CONFIG.SIDEBAR_MAX_WIDTH, startWidth + deltaX)
+        BUDDY_CONFIG.SIDEBAR_MIN_WIDTH as number,
+        Math.min(BUDDY_CONFIG.SIDEBAR_MAX_WIDTH as number, startWidth + deltaX)
       );
 
       this.currentWidth = newWidth;
@@ -141,9 +141,17 @@ export class BuddySidebar {
 
   private updateBodyMargin() {
     if (this.isOpen && window.innerWidth > 768) {
+      // Apply margin to both body and html elements for better compatibility
       document.body.style.marginRight = `${this.currentWidth}px`;
+      document.documentElement.style.marginRight = `${this.currentWidth}px`;
+      document.documentElement.style.transition = 'margin-right 0.3s ease';
+
+      // Also set a CSS variable that can be used by the page
+      document.documentElement.style.setProperty('--buddy-sidebar-width', `${this.currentWidth}px`);
     } else {
       document.body.style.marginRight = '';
+      document.documentElement.style.marginRight = '';
+      document.documentElement.style.removeProperty('--buddy-sidebar-width');
     }
   }
 
@@ -154,7 +162,7 @@ export class BuddySidebar {
       // Adjust sidebar width if it's too wide for the screen
       const maxWidth = window.innerWidth * 0.8;
       if (this.currentWidth > maxWidth) {
-        this.currentWidth = Math.max(BUDDY_CONFIG.SIDEBAR_MIN_WIDTH, maxWidth);
+        this.currentWidth = Math.max(BUDDY_CONFIG.SIDEBAR_MIN_WIDTH as number, maxWidth);
         if (this.sidebar) {
           this.sidebar.style.width = `${this.currentWidth}px`;
         }
@@ -185,6 +193,7 @@ export class BuddySidebar {
     }
 
     document.body.classList.add('buddy-sidebar-open');
+    document.documentElement.classList.add('buddy-sidebar-open');
     this.updateBodyMargin();
     this.isOpen = true;
 
@@ -211,7 +220,12 @@ export class BuddySidebar {
 
     this.sidebar.classList.remove('open');
     document.body.classList.remove('buddy-sidebar-open');
+    document.documentElement.classList.remove('buddy-sidebar-open');
+
+    // Reset all margins
     document.body.style.marginRight = '';
+    document.documentElement.style.marginRight = '';
+    document.documentElement.style.removeProperty('--buddy-sidebar-width');
 
     // Show buddy icon when sidebar is closed
     const buddyIcon = document.getElementById('buddy-icon');
@@ -313,6 +327,11 @@ export class BuddySidebar {
         case 'OPEN_MANAGEMENT':
           // Handle management opening
           chrome.runtime.sendMessage({ type: 'OPEN_MANAGEMENT' });
+          break;
+
+        case 'CLOSE_SIDEBAR':
+          // Close the sidebar
+          this.close();
           break;
       }
     });

@@ -366,7 +366,7 @@ class BuddyServiceWorker {
           id: generateId(),
           type: 'debug' as const,
           content: `Tool calls made:\n${JSON.stringify(
-            (this.anthropicAPI as any).lastToolCalls.map(tc => ({
+            (this.anthropicAPI as any).lastToolCalls.map((tc: any) => ({
               name: tc.name,
               input: tc.input,
             })),

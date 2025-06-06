@@ -43,7 +43,8 @@ body {
 
 .settings-btn,
 .history-btn,
-.new-chat-btn {
+.new-chat-btn,
+.close-sidebar-btn {
   background: none;
   border: none;
   padding: 8px;
@@ -55,7 +56,8 @@ body {
 
 .settings-btn:hover,
 .history-btn:hover,
-.new-chat-btn:hover {
+.new-chat-btn:hover,
+.close-sidebar-btn:hover {
   background-color: #f1f3f4;
 }
 
@@ -243,14 +245,14 @@ body {
 
 /* Task Grid */
 .task-grid-container {
-  padding: 12px;
+  padding: 8px;
   border-bottom: 1px solid #e0e0e0;
 }
 
 .task-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
 }
 
 .task-icon {
@@ -258,23 +260,24 @@ body {
   align-items: center;
   justify-content: center;
   aspect-ratio: 1;
-  border-radius: 12px;
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s ease;
   position: relative;
-  font-size: 24px;
-  border: 2px solid transparent;
+  font-size: 18px;
+  border: 1px solid transparent;
+  padding: 6px;
 }
 
 .task-icon:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   border-color: currentColor;
 }
 
 .task-icon:active {
   transform: translateY(0);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
 .task-icon-tooltip {
@@ -312,7 +315,7 @@ body {
 .show-more-icon {
   background: #f8f9fa;
   color: #5f6368;
-  border: 2px dashed #dadce0;
+  border: 1px dashed #dadce0;
 }
 
 .show-more-icon:hover {
@@ -384,8 +387,8 @@ body {
   padding: 16px;
   overflow-y: auto;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
 }
 
 /* Chat Container */

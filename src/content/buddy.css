@@ -53,6 +53,14 @@
 /* Body adjustment when sidebar is open */
 body.buddy-sidebar-open {
   transition: margin-right 0.3s ease;
+  overflow-x: auto !important;
+}
+
+/* Ensure page content respects the sidebar space */
+html.buddy-sidebar-open,
+body.buddy-sidebar-open {
+  width: calc(100% - var(--buddy-sidebar-width, 0px)) !important;
+  position: relative !important;
 }
 
 /* Loading states */

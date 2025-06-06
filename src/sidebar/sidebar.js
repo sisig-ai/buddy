@@ -42,6 +42,7 @@ class BuddySidebarUI {
   constructor() {
     console.log('BuddySidebarUI v1.0.2-debug initializing...');
     this.storage = StorageManager.getInstance();
+    this.chatContainer = document.getElementById('chat-container');
     this.chatMessages = document.getElementById('chat-messages');
     this.chatInput = document.getElementById('chat-input');
     this.sendBtn = document.getElementById('send-btn');
@@ -151,16 +152,16 @@ You can:
     // Clear existing grid
     this.taskGrid.innerHTML = '';
 
-    // Show first 7 tasks in main grid
-    const visibleTasks = this.tasks.slice(0, 7);
-    const hasMore = this.tasks.length > 7;
+    // Show first 11 tasks in main grid (6x2 grid minus 1 for "show more")
+    const visibleTasks = this.tasks.slice(0, 11);
+    const hasMore = this.tasks.length > 11;
 
     visibleTasks.forEach(task => {
       const taskIcon = this.createTaskIcon(task);
       this.taskGrid.appendChild(taskIcon);
     });
 
-    // Add "show more" icon if there are more than 7 tasks
+    // Add "show more" icon if there are more than 11 tasks
     if (hasMore) {
       const showMoreIcon = document.createElement('div');
       showMoreIcon.className = 'task-icon show-more-icon';
@@ -234,6 +235,14 @@ You can:
     this.settingsBtn.addEventListener('click', () => {
       window.parent.postMessage({ type: 'OPEN_MANAGEMENT' }, '*');
     });
+
+    // Close sidebar button
+    const closeSidebarBtn = document.getElementById('close-sidebar-btn');
+    if (closeSidebarBtn) {
+      closeSidebarBtn.addEventListener('click', () => {
+        window.parent.postMessage({ type: 'CLOSE_SIDEBAR' }, '*');
+      });
+    }
 
     // History button
     this.historyBtn.addEventListener('click', () => {
@@ -532,7 +541,7 @@ You can:
   scrollToBottom() {
     // Use requestAnimationFrame to ensure DOM has updated
     requestAnimationFrame(() => {
-      this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+      this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
     });
   }
 
