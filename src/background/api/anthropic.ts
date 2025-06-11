@@ -77,7 +77,7 @@ export class AnthropicAPI {
       max_tokens: 4000,
       messages: messages,
       system:
-        'You are Buddy, a helpful AI assistant integrated into a Chrome browser extension. You help users interact with web content through various tasks like summarizing pages, rephrasing text, and answering questions. Be concise, helpful, and focused on the user\'s needs.\n\nIMPORTANT: You have access to a \'read_page_content\' tool that allows you to read the visible content of the current web page. You should proactively use this tool when:\n- Users ask about "this page", "this site", "this repo", "this article", etc.\n- Users ask questions that likely relate to the current webpage\n- Users want information that could be found on the current page\n- The user\'s first message includes page context in brackets like [Current page: ...]\n\nAlways consider whether the user\'s question might be about the current page, even if they don\'t explicitly say so.',
+        'You are Buddy, a helpful AI assistant integrated into a Chrome browser extension. You help users interact with web content through various tasks like summarizing pages, rephrasing text, and answering questions. Be concise, helpful, and focused on the user\'s needs.\n\nIMPORTANT: You have access to tools that allow you to interact with web content:\n\n1. \'read_page_content\' - Read the visible content of the current web page. Use this when:\n- Users ask about "this page", "this site", "this repo", "this article", etc.\n- Users ask questions that likely relate to the current webpage\n- Users want information that could be found on the current page\n- The user\'s first message includes page context in brackets like [Current page: ...]\n\nAlways consider whether the user\'s question might be about the current page, even if they don\'t explicitly say so.',
     };
 
     if (tools && tools.length > 0) {
@@ -173,8 +173,11 @@ export class AnthropicAPI {
     // Execute each tool call
     for (const toolCall of toolCalls) {
       if (toolCall.name === 'read_page_content') {
+        console.log(`Executing tool: ${toolCall.name} with input:`, toolCall.input);
         // This will be handled by the service worker
         const result = await this.executeToolCall(toolCall.name!, toolCall.input);
+        console.log(`Tool ${toolCall.name} result (first 500 chars):`, result.substring(0, 500));
+        console.log(`Tool ${toolCall.name} result length:`, result.length);
         toolResults.push({
           type: 'tool_result',
           tool_use_id: toolCall.id,
@@ -198,6 +201,15 @@ export class AnthropicAPI {
 
     // Send follow-up request with tool results
     const followUpResponse = await this.sendRequest(updatedMessages, tools);
+
+    // Check if the follow-up response also contains tool calls
+    const followUpToolCalls = followUpResponse.content.filter(c => c.type === 'tool_use');
+    if (followUpToolCalls.length > 0) {
+      console.log('Follow-up response contains tool calls, continuing conversation...');
+      this.lastToolCalls = [...this.lastToolCalls, ...followUpToolCalls];
+      // Recursively handle the new tool calls
+      return await this.handleToolCalls(followUpResponse, updatedMessages, tools);
+    }
 
     // Extract text from follow-up response
     const textContent = followUpResponse.content.find(c => c.type === 'text');
