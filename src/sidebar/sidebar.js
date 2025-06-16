@@ -1,7 +1,6 @@
-import { PageParser } from '../content/page-parser.js';
 import { StorageManager } from '../shared/storage-manager.js';
-import { generateId } from '../shared/utils.js';
 import { marked } from 'marked';
+import { SidebarPermissionDialog } from './permission-dialog.js';
 
 // Configure marked for optimal rendering
 marked.setOptions({
@@ -61,6 +60,8 @@ class BuddySidebarUI {
     this.pageInfo = null;
     this.showDebugMessages = false; // Will be loaded from settings
     this.tasks = [];
+    this.permissionDialog = new SidebarPermissionDialog();
+    this.activeRequests = new Map(); // Track all active requests with their timeouts
     this.init();
   }
 
@@ -69,7 +70,26 @@ class BuddySidebarUI {
     await this.loadPageInfo();
     await this.loadSettings();
     this.setupEventListeners();
-    this.updateEmptyState();
+    
+    // Restore current conversation if exists
+    await this.restoreCurrentConversation();
+    
+    // Check if there's a pending execution state
+    const executionState = await this.storage.getExecutionState();
+    if (executionState && executionState.isProcessing) {
+      // Restore the execution UI
+      this.restoreExecutionState(executionState);
+    } else if (!this.currentConversationId) {
+      // Only show empty state if no conversation was restored
+      this.updateEmptyState();
+    } else {
+      // Check if we just navigated and should notify the conversation
+      const wasNavigated = await this.checkPostNavigationState();
+      if (wasNavigated) {
+        this.addMessage('debug', '🔄 Navigation detected. Page has been reloaded.');
+      }
+    }
+    
     this.focusInput();
     await this.loadConversationHistory();
   }
@@ -137,6 +157,55 @@ You can:
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+
+  async restoreCurrentConversation() {
+    try {
+      const currentConversationId = await this.storage.getCurrentConversationId();
+      if (currentConversationId) {
+        // Load the conversation to verify it still exists
+        const conversations = await this.storage.getConversations();
+        const conversation = conversations.find(c => c.id === currentConversationId);
+        
+        if (conversation) {
+          this.currentConversationId = currentConversationId;
+          
+          // Load messages into the chat
+          conversation.messages.forEach(msg => {
+            if (
+              msg.type === 'user' ||
+              msg.type === 'assistant' ||
+              msg.type === 'task' ||
+              msg.type === 'tool' ||
+              (msg.type === 'debug' && this.showDebugMessages)
+            ) {
+              this.addMessage(msg.type, msg.content, msg.type === 'assistant');
+            }
+          });
+          
+          this.scrollToBottom();
+        } else {
+          // Conversation doesn't exist anymore, clear the current ID
+          await this.storage.setCurrentConversationId(null);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to restore current conversation:', error);
+    }
+  }
+
+  async checkPostNavigationState() {
+    try {
+      // Check session storage for navigation flag
+      const navigationFlag = sessionStorage.getItem('buddy_post_navigation');
+      if (navigationFlag === 'true') {
+        sessionStorage.removeItem('buddy_post_navigation');
+        return true;
+      }
+      return false;
+    } catch (error) {
+      return false;
+    }
   }
 
   async loadTasks() {
@@ -263,6 +332,59 @@ You can:
     window.addEventListener('message', event => {
       if (event.data.type === 'SIDEBAR_OPENED') {
         this.handleSidebarOpened();
+      } else if (event.data.type === 'TOOL_PERMISSION_REQUEST') {
+        // Handle permission request within sidebar
+        this.permissionDialog.show(event.data.toolName).then((permission) => {
+          // Send response back to parent
+          window.parent.postMessage({
+            type: 'TOOL_PERMISSION_RESPONSE',
+            permission: permission,
+            requestId: event.data.requestId
+          }, '*');
+        });
+      } else if (event.data.type === 'TOOL_CALL_UPDATE') {
+        // Show tool call immediately
+        const toolCall = {
+          name: event.data.data.toolName,
+          input: event.data.data.toolInput
+        };
+        
+        // Remove loading indicator before adding tool call message
+        const existingLoading = document.getElementById('loading-indicator');
+        if (existingLoading) {
+          existingLoading.remove();
+        }
+        
+        this.addMessage('tool', JSON.stringify([toolCall]));
+        
+        // Re-add loading indicator at the bottom if we're still processing
+        if (this.isProcessing) {
+          this.showLoadingIndicator();
+        }
+        
+        // Reset activity timeout for specific request if provided, otherwise all requests
+        if (event.data.requestId) {
+          this.resetRequestTimeout(event.data.requestId);
+        } else {
+          this.resetAllActivityTimeouts();
+        }
+      } else if (event.data.type === 'MESSAGE_RESPONSE') {
+        // Handle response for specific request
+        const requestData = this.activeRequests.get(event.data.requestId);
+        if (requestData) {
+          clearTimeout(requestData.timeoutId);
+          this.activeRequests.delete(event.data.requestId);
+          requestData.resolve(event.data.response);
+        }
+      } else if (event.data.type === 'ACTIVITY_PING') {
+        // Reset timeout for specific request
+        const requestData = this.activeRequests.get(event.data.requestId);
+        if (requestData) {
+          this.resetRequestTimeout(event.data.requestId);
+        }
+      } else if (event.data.type === 'RESTORE_EXECUTION_STATE') {
+        // Restore execution state after navigation
+        this.restoreExecutionState(event.data.data);
       }
     });
   }
@@ -306,6 +428,7 @@ You can:
 
       // Always create a new conversation for task execution
       this.currentConversationId = null;
+      await this.storage.setCurrentConversationId(null);
       this.chatMessages.innerHTML = '';
 
       // Show task execution message
@@ -329,6 +452,8 @@ You can:
 
       if (response.success) {
         this.currentConversationId = response.conversationId;
+        // Persist the current conversation ID
+        await this.storage.setCurrentConversationId(this.currentConversationId);
         this.addMessage('assistant', response.result, true);
         // Reload conversation history to show the new conversation
         await this.loadConversationHistory();
@@ -382,6 +507,12 @@ You can:
 
       if (response.success) {
         this.currentConversationId = response.conversationId;
+        // Persist the current conversation ID
+        await this.storage.setCurrentConversationId(this.currentConversationId);
+        
+        // Tool calls are now shown in real-time via TOOL_CALL_UPDATE messages
+        // No need to show them again here
+        
         this.addMessage('assistant', response.result, true);
       } else {
         this.showError(response.error || 'Failed to send message');
@@ -396,20 +527,45 @@ You can:
     this.focusInput();
   }
 
+  resetAllActivityTimeouts() {
+    // Reset timeout for all active requests
+    for (const [requestId, requestData] of this.activeRequests.entries()) {
+      this.resetRequestTimeout(requestId);
+    }
+  }
+
+  resetRequestTimeout(requestId) {
+    const requestData = this.activeRequests.get(requestId);
+    if (!requestData) return;
+    
+    // Clear existing timeout
+    if (requestData.timeoutId) {
+      clearTimeout(requestData.timeoutId);
+    }
+    
+    // Set new timeout for 60 seconds
+    requestData.timeoutId = setTimeout(() => {
+      this.activeRequests.delete(requestId);
+      requestData.reject(new Error('Request timeout - no activity for 60 seconds'));
+      // Only hide loading indicator if no other requests are active
+      if (this.activeRequests.size === 0) {
+        this.hideLoadingIndicator();
+      }
+    }, 60000);
+  }
+
   async sendMessageThroughParent(message) {
     return new Promise((resolve, reject) => {
       // Generate unique ID for this request
       const requestId = Math.random().toString(36).substr(2, 9);
-
-      // Set up response handler
-      const handler = event => {
-        if (event.data.type === 'MESSAGE_RESPONSE' && event.data.requestId === requestId) {
-          window.removeEventListener('message', handler);
-          resolve(event.data.response);
-        }
+      
+      // Store request data
+      const requestData = {
+        resolve,
+        reject,
+        timeoutId: null
       };
-
-      window.addEventListener('message', handler);
+      this.activeRequests.set(requestId, requestData);
 
       // Send to parent with request ID
       window.parent.postMessage(
@@ -421,11 +577,8 @@ You can:
         '*'
       );
 
-      // Timeout after 30 seconds
-      setTimeout(() => {
-        window.removeEventListener('message', handler);
-        reject(new Error('Request timeout'));
-      }, 30000);
+      // Start initial timeout
+      this.resetRequestTimeout(requestId);
     });
   }
 
@@ -442,11 +595,20 @@ You can:
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
 
-    // Render markdown for assistant messages, plain text for others
+    // Render content based on message type
     if (type === 'assistant') {
       contentDiv.innerHTML = renderMarkdown(content);
       // Scroll again after markdown is rendered
       requestAnimationFrame(() => this.scrollToBottom());
+    } else if (type === 'tool') {
+      // Parse and format tool calls nicely
+      try {
+        const toolCalls = JSON.parse(content);
+        const toolContent = this.formatToolCalls(toolCalls);
+        contentDiv.innerHTML = toolContent;
+      } catch (e) {
+        contentDiv.textContent = content;
+      }
     } else {
       contentDiv.textContent = content;
     }
@@ -490,6 +652,12 @@ You can:
   }
 
   showLoadingIndicator() {
+    // Remove any existing loading indicator first
+    const existingLoading = document.getElementById('loading-indicator');
+    if (existingLoading) {
+      existingLoading.remove();
+    }
+    
     const loadingDiv = document.createElement('div');
     loadingDiv.className = 'loading';
     loadingDiv.id = 'loading-indicator';
@@ -513,6 +681,63 @@ You can:
 
   showError(message) {
     this.addMessage('assistant', `❌ ${message}`);
+  }
+
+  formatToolCalls(toolCalls) {
+    const toolIcons = {
+      'read_page_content': '📄',
+      'page_snapshot': '📸',
+      'dom_snapshot': '🔍',
+      'click': '👆',
+      'type_text': '⌨️',
+      'scroll_down': '⬇️',
+      'scroll_up': '⬆️',
+      'navigate_back': '⬅️',
+      'navigate_forward': '➡️',
+      'go_to_url': '🌐',
+    };
+
+    const toolNames = {
+      'read_page_content': 'Reading page content',
+      'page_snapshot': 'Taking screenshot',
+      'dom_snapshot': 'Analyzing page structure',
+      'click': 'Clicking element',
+      'type_text': 'Typing text',
+      'scroll_down': 'Scrolling down',
+      'scroll_up': 'Scrolling up',
+      'navigate_back': 'Going back',
+      'navigate_forward': 'Going forward',
+      'go_to_url': 'Navigating to URL',
+    };
+
+    let html = '<div class="tool-calls">';
+    
+    toolCalls.forEach(call => {
+      const icon = toolIcons[call.name] || '🔧';
+      const name = toolNames[call.name] || call.name;
+      
+      html += `<div class="tool-call-item">
+        <span class="tool-icon">${icon}</span>
+        <span class="tool-name">${name}</span>`;
+      
+      // Add relevant parameters
+      if (call.input) {
+        if (call.input.element_text) {
+          html += `<span class="tool-param">: "${call.input.element_text}"</span>`;
+        } else if (call.input.element_id) {
+          html += `<span class="tool-param">: #${call.input.element_id}</span>`;
+        } else if (call.input.url) {
+          html += `<span class="tool-param">: ${call.input.url}</span>`;
+        } else if (call.input.input_text) {
+          html += `<span class="tool-param">: "${call.input.input_text}"</span>`;
+        }
+      }
+      
+      html += '</div>';
+    });
+    
+    html += '</div>';
+    return html;
   }
 
   showToast(message) {
@@ -606,14 +831,15 @@ You can:
   async handleSidebarOpened() {
     this.focusInput();
 
-    // Load current conversation if exists
-    if (this.currentConversationId) {
+    // Restore current conversation from storage if we don't have one in memory
+    if (!this.currentConversationId) {
+      await this.restoreCurrentConversation();
+    } else {
+      // If we have one in memory, reload it to get any updates
       try {
-        const response = await chrome.runtime.sendMessage({
-          type: 'GET_CONVERSATIONS',
-        });
-
-        const conversation = response.find(c => c.id === this.currentConversationId);
+        const conversations = await this.storage.getConversations();
+        const conversation = conversations.find(c => c.id === this.currentConversationId);
+        
         if (conversation && conversation.messages) {
           // Clear messages and reload from conversation
           this.chatMessages.innerHTML = '';
@@ -622,11 +848,15 @@ You can:
             if (
               msg.type === 'user' ||
               msg.type === 'assistant' ||
+              msg.type === 'task' ||
+              msg.type === 'tool' ||
               (msg.type === 'debug' && this.showDebugMessages)
             ) {
               this.addMessage(msg.type, msg.content, msg.type === 'assistant');
             }
           });
+          
+          this.scrollToBottom();
         }
       } catch (error) {
         console.error('Failed to load conversation:', error);
@@ -729,6 +959,9 @@ You can:
       // Clear current chat
       this.chatMessages.innerHTML = '';
       this.currentConversationId = conversationId;
+      
+      // Persist the current conversation ID
+      await this.storage.setCurrentConversationId(this.currentConversationId);
 
       // Load messages
       conversation.messages.forEach(msg => {
@@ -785,15 +1018,51 @@ You can:
     this.conversationHistory.style.display = 'none';
   }
 
-  startNewChat() {
+  async startNewChat() {
     // Clear current conversation
     this.currentConversationId = null;
+    await this.storage.setCurrentConversationId(null);
     this.chatMessages.innerHTML = '';
     this.updateEmptyState();
     this.focusInput();
 
     // Hide history panel if open
     this.hideHistoryPanel();
+  }
+
+  async restoreExecutionState(executionState) {
+    console.log('Restoring execution state:', executionState);
+    
+    // Set the current conversation
+    this.currentConversationId = executionState.conversationId;
+    
+    // Show tool calls that happened before navigation
+    if (executionState.toolCalls && executionState.toolCalls.length > 0) {
+      for (const toolCall of executionState.toolCalls) {
+        this.addMessage('tool', JSON.stringify([{
+          name: toolCall.name,
+          input: toolCall.input
+        }]));
+      }
+    }
+    
+    // Show loading indicator
+    this.isProcessing = true;
+    this.showLoadingIndicator();
+    
+    // Create an active request to track the restored execution
+    const requestData = {
+      resolve: () => {},
+      reject: () => {},
+      timeoutId: null
+    };
+    this.activeRequests.set(executionState.requestId, requestData);
+    
+    // Start timeout tracking for this request
+    this.resetRequestTimeout(executionState.requestId);
+    
+    // Show a message that execution is continuing
+    this.addMessage('debug', '⏳ Continuing execution from before navigation...');
   }
 }
 

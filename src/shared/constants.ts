@@ -14,6 +14,9 @@ export const BUDDY_CONFIG = {
     TASKS: 'buddy_tasks',
     SETTINGS: 'buddy_settings',
     BLACKLIST: 'buddy_blacklist',
+    CURRENT_CONVERSATION: 'buddy_current_conversation',
+    NAVIGATION_STATE: 'buddy_navigation_state',
+    EXECUTION_STATE: 'buddy_execution_state',
   },
 } as const;
 

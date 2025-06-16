@@ -13,7 +13,7 @@ export interface Task {
 
 export interface Message {
   id: string;
-  type: 'user' | 'assistant' | 'task' | 'debug';
+  type: 'user' | 'assistant' | 'task' | 'debug' | 'tool';
   content: string;
   taskId?: string;
   taskOutput?: string;
@@ -95,4 +95,19 @@ export interface TaskExecutionResponse {
   result?: string;
   error?: string;
   conversationId: string;
+}
+
+export interface ExecutionState {
+  requestId: string;
+  conversationId: string;
+  type: 'task' | 'message';
+  startTime: number;
+  lastActivity: number;
+  toolCalls: Array<{
+    name: string;
+    input: any;
+    timestamp: number;
+  }>;
+  isProcessing: boolean;
+  tabId?: number;
 }

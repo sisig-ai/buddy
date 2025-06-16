@@ -18,8 +18,8 @@ export class BuddySidebar {
 
   private setupEventListeners() {
     // Listen for toggle events from icon
-    document.addEventListener(BUDDY_EVENTS.TOGGLE_SIDEBAR, () => {
-      this.toggle();
+    document.addEventListener(BUDDY_EVENTS.TOGGLE_SIDEBAR, async () => {
+      await this.toggle();
     });
 
     // Listen for resize events
@@ -171,20 +171,29 @@ export class BuddySidebar {
     }
   }
 
-  toggle() {
+  async toggle() {
     if (this.isOpen) {
       this.close();
     } else {
-      this.open();
+      await this.open();
     }
   }
 
-  open() {
+  async open() {
     if (this.isOpen) {
       return;
     }
 
     this.createSidebar();
+    
+    // Check if we're opening after navigation
+    const navState = await this.storage.getNavigationState();
+    if (navState && navState.reopenSidebar) {
+      // Set session storage flag for sidebar to detect
+      sessionStorage.setItem('buddy_post_navigation', 'true');
+      // Clear the navigation state now that we've handled it
+      await this.storage.setNavigationState(null);
+    }
 
     // Force reflow before opening
     if (this.sidebar) {

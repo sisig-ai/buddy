@@ -1,6 +1,6 @@
 import { BUDDY_CONFIG, BUILT_IN_TASKS } from './constants.js';
 import { getDefaultSettings } from './utils.js';
-import type { BuddySettings, Conversation, Task } from './types.js';
+import type { BuddySettings, Conversation, Task, ExecutionState } from './types.js';
 
 export class StorageManager {
   private static instance: StorageManager;
@@ -122,6 +122,12 @@ export class StorageManager {
   async deleteConversation(conversationId: string): Promise<void> {
     const conversationKey = `buddy_conv_${conversationId}`;
     await chrome.storage.sync.remove(conversationKey);
+    
+    // If this was the current conversation, clear it
+    const currentId = await this.getCurrentConversationId();
+    if (currentId === conversationId) {
+      await this.setCurrentConversationId(null);
+    }
   }
 
   private async cleanupOldConversations(): Promise<void> {
@@ -200,5 +206,50 @@ export class StorageManager {
     const blacklist = await this.getBlacklist();
     const filtered = blacklist.filter(d => d !== domain);
     await this.saveBlacklist(filtered);
+  }
+
+  async getCurrentConversationId(): Promise<string | null> {
+    const result = await chrome.storage.sync.get(BUDDY_CONFIG.STORAGE_KEYS.CURRENT_CONVERSATION);
+    return result[BUDDY_CONFIG.STORAGE_KEYS.CURRENT_CONVERSATION] || null;
+  }
+
+  async setCurrentConversationId(conversationId: string | null): Promise<void> {
+    if (conversationId === null) {
+      await chrome.storage.sync.remove(BUDDY_CONFIG.STORAGE_KEYS.CURRENT_CONVERSATION);
+    } else {
+      await chrome.storage.sync.set({
+        [BUDDY_CONFIG.STORAGE_KEYS.CURRENT_CONVERSATION]: conversationId,
+      });
+    }
+  }
+
+  async getNavigationState(): Promise<{ pending: boolean; reopenSidebar: boolean; timestamp?: number } | null> {
+    const result = await chrome.storage.sync.get(BUDDY_CONFIG.STORAGE_KEYS.NAVIGATION_STATE);
+    return result[BUDDY_CONFIG.STORAGE_KEYS.NAVIGATION_STATE] || null;
+  }
+
+  async setNavigationState(state: { pending: boolean; reopenSidebar: boolean; timestamp?: number } | null): Promise<void> {
+    if (state === null) {
+      await chrome.storage.sync.remove(BUDDY_CONFIG.STORAGE_KEYS.NAVIGATION_STATE);
+    } else {
+      await chrome.storage.sync.set({
+        [BUDDY_CONFIG.STORAGE_KEYS.NAVIGATION_STATE]: state,
+      });
+    }
+  }
+
+  async getExecutionState(): Promise<ExecutionState | null> {
+    const result = await chrome.storage.sync.get(BUDDY_CONFIG.STORAGE_KEYS.EXECUTION_STATE);
+    return result[BUDDY_CONFIG.STORAGE_KEYS.EXECUTION_STATE] || null;
+  }
+
+  async setExecutionState(state: ExecutionState | null): Promise<void> {
+    if (state === null) {
+      await chrome.storage.sync.remove(BUDDY_CONFIG.STORAGE_KEYS.EXECUTION_STATE);
+    } else {
+      await chrome.storage.sync.set({
+        [BUDDY_CONFIG.STORAGE_KEYS.EXECUTION_STATE]: state,
+      });
+    }
   }
 }

@@ -1,5 +1,7 @@
 import { StorageManager } from '../shared/storage-manager.js';
 import { AnthropicAPI } from './api/anthropic.js';
+import { BROWSER_AUTOMATION_TOOLS, ToolPermissionManager } from './browser-tools.js';
+import { ExecutionManager } from './execution-manager.js';
 import type {
   TaskExecutionRequest,
   TaskExecutionResponse,
@@ -13,6 +15,8 @@ class BuddyServiceWorker {
   private storage = StorageManager.getInstance();
   private anthropicAPI: AnthropicAPI | null = null;
   private currentTabId: number | null = null;
+  private permissionManager = new ToolPermissionManager();
+  private executionManager = new ExecutionManager();
 
   constructor() {
     this.init();
@@ -42,10 +46,12 @@ class BuddyServiceWorker {
       }
     });
 
-    // Handle tab updates to check blacklist
+    // Handle tab updates to check blacklist and execution state
     chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
       if (changeInfo.status === 'complete' && tab.url) {
         await this.checkAndNotifyBlacklist(tabId, tab.url);
+        // Check if this tab needs execution state restored
+        await this.executionManager.handleTabComplete(tabId);
       }
     });
   }
@@ -67,7 +73,7 @@ class BuddyServiceWorker {
 
     switch (request.type) {
       case 'EXECUTE_TASK':
-        return await this.executeTask(request.data);
+        return await this.executeTask(request.data, sender.tab?.id, request.requestId);
 
       case 'UPDATE_API_KEY':
         return await this.updateApiKey(request.data.apiKey);
@@ -102,7 +108,7 @@ class BuddyServiceWorker {
         return await this.storage.deleteTask(request.data.taskId);
 
       case 'SEND_MESSAGE':
-        return await this.sendMessage(request.data, sender.tab?.id);
+        return await this.sendMessage(request.data, sender.tab?.id, request.requestId);
 
       case 'OPEN_MANAGEMENT':
         chrome.tabs.create({ url: chrome.runtime.getURL('src/management/management.html') });
@@ -113,8 +119,14 @@ class BuddyServiceWorker {
     }
   }
 
-  private async executeTask(request: TaskExecutionRequest): Promise<TaskExecutionResponse> {
+  private async executeTask(request: TaskExecutionRequest, senderTabId?: number, requestId?: string): Promise<TaskExecutionResponse> {
+    // Start execution tracking
+    const execRequestId = requestId || generateId();
+    const conversationId = request.conversationId || generateId();
+    
     try {
+      await this.executionManager.startExecution(execRequestId, conversationId, 'task', senderTabId || this.currentTabId);
+      
       // Try to initialize API if not already done
       if (!this.anthropicAPI) {
         await this.initializeAnthropicAPI();
@@ -135,11 +147,28 @@ class BuddyServiceWorker {
       let conversation: Conversation;
       if (request.conversationId) {
         const conversations = await this.storage.getConversations();
-        conversation =
-          conversations.find(c => c.id === request.conversationId) ||
-          this.createNewConversation(task.name);
+        const existing = conversations.find(c => c.id === request.conversationId);
+        if (existing) {
+          conversation = existing;
+        } else {
+          // Create new conversation with the requested ID
+          conversation = {
+            id: request.conversationId,
+            title: task.name,
+            messages: [],
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          };
+        }
       } else {
-        conversation = this.createNewConversation(task.name);
+        // Create new conversation with the generated ID
+        conversation = {
+          id: conversationId,
+          title: task.name,
+          messages: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
       }
 
       // Create task message
@@ -161,13 +190,48 @@ class BuddyServiceWorker {
         }));
 
       // Pass tab context to API for tool execution
-      (this.anthropicAPI as any).currentTabId = this.currentTabId;
+      const tabId = senderTabId || this.currentTabId;
+      (this.anthropicAPI as any).currentTabId = tabId;
+      
+      // Set up permission checker for tasks too
+      if (tabId) {
+        (this.anthropicAPI as any).permissionChecker = async (toolName: string) => {
+          const permission = await this.permissionManager.checkPermission(toolName, tabId!);
+          return permission === 'allowed';
+        };
+      }
+      
+      // Set up tool call callback for task execution
+      (this.anthropicAPI as any).onToolCall = async (toolCall: any) => {
+        // Send tool call update to content script immediately
+        if (tabId) {
+          try {
+            await chrome.tabs.sendMessage(tabId, {
+              type: 'TOOL_CALL_UPDATE',
+              data: {
+                toolName: toolCall.name,
+                toolInput: toolCall.input,
+                conversationId: conversation.id,
+                requestId: execRequestId
+              }
+            });
+            // Update execution activity
+            await this.executionManager.updateExecutionActivity(execRequestId, toolCall);
+          } catch (error) {
+            console.error('Failed to send tool call update:', error);
+          }
+        }
+      };
 
+      // Define available tools - include all browser automation tools  
+      const tools: AnthropicTool[] = BROWSER_AUTOMATION_TOOLS;
+      
       // Execute task with Anthropic API
       const result = await this.anthropicAPI.processTask(
         task.prompt,
         request.content,
-        conversationHistory
+        conversationHistory,
+        tools
       );
 
       // Create assistant response message
@@ -177,13 +241,30 @@ class BuddyServiceWorker {
         content: result,
         timestamp: Date.now(),
       };
-
-      // Update conversation
-      conversation.messages.push(taskMessage, responseMessage);
+      
+      // Add tool call messages if any tools were used
+      if ((this.anthropicAPI as any).lastToolCalls && (this.anthropicAPI as any).lastToolCalls.length > 0) {
+        const toolMessage: Message = {
+          id: generateId(),
+          type: 'tool' as const,
+          content: JSON.stringify((this.anthropicAPI as any).lastToolCalls.map((tc: any) => ({
+            name: tc.name,
+            input: tc.input,
+          }))),
+          timestamp: Date.now(),
+        };
+        conversation.messages.push(taskMessage, toolMessage, responseMessage);
+      } else {
+        conversation.messages.push(taskMessage, responseMessage);
+      }
+      
       conversation.updatedAt = Date.now();
 
       // Save conversation
       await this.storage.saveConversation(conversation);
+
+      // Complete execution tracking
+      await this.executionManager.completeExecution(execRequestId);
 
       return {
         success: true,
@@ -192,6 +273,10 @@ class BuddyServiceWorker {
       };
     } catch (error) {
       console.error('Task execution failed:', error);
+      // Clear execution on error
+      if (execRequestId) {
+        await this.executionManager.completeExecution(execRequestId);
+      }
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error occurred',
@@ -254,9 +339,16 @@ class BuddyServiceWorker {
       conversationId?: string;
       showDebugMessages?: boolean;
     },
-    senderTabId?: number
+    senderTabId?: number,
+    requestId?: string
   ): Promise<{ success: boolean; result?: string; conversationId: string; error?: string }> {
+    // Start execution tracking
+    const execRequestId = requestId || generateId();
+    const conversationId = request.conversationId || generateId();
+    
     try {
+      await this.executionManager.startExecution(execRequestId, conversationId, 'message', senderTabId || this.currentTabId);
+      
       // Try to initialize API if not already done
       if (!this.anthropicAPI) {
         await this.initializeAnthropicAPI();
@@ -270,11 +362,28 @@ class BuddyServiceWorker {
       let conversation: Conversation;
       if (request.conversationId) {
         const conversations = await this.storage.getConversations();
-        conversation =
-          conversations.find(c => c.id === request.conversationId) ||
-          this.createNewConversation('Chat');
+        const existing = conversations.find(c => c.id === request.conversationId);
+        if (existing) {
+          conversation = existing;
+        } else {
+          // Create new conversation with the requested ID
+          conversation = {
+            id: request.conversationId,
+            title: 'Chat',
+            messages: [],
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          };
+        }
       } else {
-        conversation = this.createNewConversation('Chat');
+        // Create new conversation with the generated ID
+        conversation = {
+          id: conversationId,
+          title: 'Chat',
+          messages: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
       }
 
       // Get page metadata from the sender tab, not the active tab
@@ -314,22 +423,17 @@ class BuddyServiceWorker {
           content: m.content,
         }));
 
-      // Define available tools
-      const tools: AnthropicTool[] = [
-        {
-          name: 'read_page_content',
-          description:
-            'Read the visible content of the current web page. Use this when the user asks about "this page", "this site", "this repo", or needs information from the current webpage.',
-          input_schema: {
-            type: 'object',
-            properties: {},
-            required: [],
-          },
-        },
-      ];
+      // Define available tools - include all browser automation tools
+      const tools: AnthropicTool[] = BROWSER_AUTOMATION_TOOLS;
 
       // Pass tab context to API for tool execution
       (this.anthropicAPI as any).currentTabId = tabId;
+      
+      // Set up permission checker
+      (this.anthropicAPI as any).permissionChecker = async (toolName: string) => {
+        const permission = await this.permissionManager.checkPermission(toolName, tabId);
+        return permission === 'allowed';
+      };
 
       // Add debug info to track what's being sent
       const debugInfo = {
@@ -341,9 +445,31 @@ class BuddyServiceWorker {
 
       console.log('Sending to API with debug info:', debugInfo);
 
+      // Create a callback to send tool updates immediately
+      (this.anthropicAPI as any).onToolCall = async (toolCall: any) => {
+        // Send tool call update to content script immediately
+        if (tabId) {
+          try {
+            await chrome.tabs.sendMessage(tabId, {
+              type: 'TOOL_CALL_UPDATE',
+              data: {
+                toolName: toolCall.name,
+                toolInput: toolCall.input,
+                conversationId: conversation.id,
+                requestId: execRequestId
+              }
+            });
+            // Update execution activity
+            await this.executionManager.updateExecutionActivity(execRequestId, toolCall);
+          } catch (error) {
+            console.error('Failed to send tool call update:', error);
+          }
+        }
+      };
+
       // Send message with tool capabilities - include ALL conversation history
-      const result = await this.anthropicAPI.continueConversation(
-        messageContent,
+      const apiResponse = await this.anthropicAPI.continueConversation(
+        request.message, // Use the original message without page context
         conversationHistory.slice(0, -1), // Exclude the just-added user message since we pass it separately
         tools
       );
@@ -352,30 +478,23 @@ class BuddyServiceWorker {
       const responseMessage: Message = {
         id: generateId(),
         type: 'assistant',
-        content: result,
+        content: apiResponse.text,
         timestamp: Date.now(),
       };
 
-      // Add debug message if tool was used and debug is enabled
-      if (
-        request.showDebugMessages &&
-        (this.anthropicAPI as any).lastToolCalls &&
-        (this.anthropicAPI as any).lastToolCalls.length > 0
-      ) {
-        const debugMessage: Message = {
+      // Add tool call messages if any tools were used
+      if (apiResponse.toolCalls && apiResponse.toolCalls.length > 0) {
+        // Always add a tool message (not debug) to show what actions were performed
+        const toolMessage: Message = {
           id: generateId(),
-          type: 'debug' as const,
-          content: `Tool calls made:\n${JSON.stringify(
-            (this.anthropicAPI as any).lastToolCalls.map((tc: any) => ({
-              name: tc.name,
-              input: tc.input,
-            })),
-            null,
-            2
-          )}`,
+          type: 'tool' as const,
+          content: JSON.stringify(apiResponse.toolCalls.map((tc: any) => ({
+            name: tc.name,
+            input: tc.input,
+          }))),
           timestamp: Date.now(),
         };
-        conversation.messages.push(debugMessage);
+        conversation.messages.push(toolMessage);
       }
 
       // Update conversation
@@ -385,13 +504,21 @@ class BuddyServiceWorker {
       // Save conversation
       await this.storage.saveConversation(conversation);
 
+      // Complete execution tracking
+      await this.executionManager.completeExecution(execRequestId);
+
       return {
         success: true,
-        result,
+        result: apiResponse.text,
         conversationId: conversation.id,
+        toolCalls: apiResponse.toolCalls,
       };
     } catch (error) {
       console.error('Message sending failed:', error);
+      // Clear execution on error
+      if (execRequestId) {
+        await this.executionManager.completeExecution(execRequestId);
+      }
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error occurred',

@@ -1,4 +1,4 @@
-import { BUDDY_CONFIG, BUDDY_EVENTS } from '../shared/constants.js';
+import { BUDDY_EVENTS } from '../shared/constants.js';
 import { StorageManager } from '../shared/storage-manager.js';
 import { throttle } from '../shared/utils.js';
 
@@ -17,6 +17,9 @@ export class BuddyIcon {
     this.createIcon();
     this.setupEventListeners();
     await this.loadPosition();
+    
+    // Check for navigation state and auto-open sidebar if needed
+    await this.checkNavigationState();
   }
 
   private async checkSiteBlacklist() {
@@ -192,6 +195,25 @@ export class BuddyIcon {
     const topPosition = (percentage / 100) * maxY;
 
     this.icon.style.top = `${topPosition}px`;
+  }
+
+  private async checkNavigationState() {
+    const navState = await this.storage.getNavigationState();
+    
+    // Check if we should reopen sidebar after navigation
+    if (navState && navState.reopenSidebar) {
+      // Check if navigation happened recently (within 5 seconds)
+      const timeSinceNavigation = Date.now() - (navState.timestamp || 0);
+      if (timeSinceNavigation < 5000) {
+        // Clear the navigation state
+        await this.storage.setNavigationState(null);
+        
+        // Wait a bit for page to stabilize, then open sidebar
+        setTimeout(() => {
+          this.toggleSidebar();
+        }, 500);
+      }
+    }
   }
 
   private toggleSidebar() {

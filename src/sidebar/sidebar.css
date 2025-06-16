@@ -742,3 +742,153 @@ body {
 .chat-container::-webkit-scrollbar-thumb:hover {
   background: #bdc1c6;
 }
+
+/* Permission Dialog */
+.permission-dialog {
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  margin: 8px 12px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  animation: slideIn 0.3s ease-out;
+}
+
+.permission-dialog.fade-out {
+  animation: fadeOut 0.3s ease-out;
+}
+
+.permission-content h3 {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.permission-content p {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  color: #666;
+}
+
+.permission-action {
+  background: #f5f5f5;
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 16px;
+  font-size: 15px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.permission-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.permission-buttons button {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.permission-deny {
+  background: white;
+  border: 1px solid #ddd;
+  color: #666;
+}
+
+.permission-deny:hover {
+  background: #f5f5f5;
+}
+
+.permission-allow-once {
+  background: white;
+  border: 1px solid #1a73e8;
+  color: #1a73e8;
+}
+
+.permission-allow-once:hover {
+  background: rgba(26, 115, 232, 0.05);
+}
+
+.permission-allow-session {
+  background: #1a73e8;
+  border: none;
+  color: white;
+}
+
+.permission-allow-session:hover {
+  background: #1557b0;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* Tool Call Messages */
+.message.tool {
+  align-self: center;
+  max-width: 90%;
+  margin: 8px 0;
+}
+
+.message.tool .message-content {
+  background: #f0f4f8;
+  border: 1px solid #e2e8f0;
+  padding: 12px;
+  border-radius: 8px;
+}
+
+.tool-calls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tool-call-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #4a5568;
+}
+
+.tool-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.tool-name {
+  font-weight: 500;
+  color: #2d3748;
+}
+
+.tool-param {
+  color: #718096;
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 300px;
+}
